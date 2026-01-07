@@ -5,7 +5,7 @@ Multi-cloud Terraform deployment framework for the vLLM Production Stack — wit
 
 ---
 
-<img width="1536" height="1024" alt="vllm_prod-stack-aks" src="https://github.com/user-attachments/assets/28987e5b-a438-454b-a965-fde48a41774b" />
+<img width="1536" height="1024" alt="vllm_prod-stack-aks" src="https://github.com/user-attachments/assets/ac255b23-14ac-42f8-ab5b-05145ebe1c64" />
 
 ---
 <img width="1536" height="1024" alt="vllm_prod-stack-gke" src="https://github.com/user-attachments/assets/7b95565d-bce8-4464-9124-e8fafa3b8a00" />
