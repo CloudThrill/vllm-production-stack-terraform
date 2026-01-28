@@ -21,5 +21,5 @@ Multi-cloud Terraform deployment framework for the vLLM Production Stack — wit
 ---
 **4. Nebius MK8s**
   
-   - See 👉🏻blog (Comming Soon)
+   - See 👉🏻[blog](https://cloudthrill.ca/vllm-production-stack-on-neb-terraform)
 <img width="1536" height="1024" alt="vllm_prod-stack-gke" src="https://github.com/brokedba/brokedba/blob/gh-pages/images/vllm_prod-stack-nebius.png" />
