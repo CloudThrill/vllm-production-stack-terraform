@@ -230,7 +230,7 @@ From high-density Blackwell clusters to cost-optimized L40S inference nodes. Vie
 
 ## 🛠️ Configuration Knobs
 
-This stack provides extensive customization options. Key variables are managed via environment variables (prefixed with `TF_VAR_`) or a `terraform.tfvars` file.
+This stack provides extensive customization options to tailor your deployment:
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
@@ -250,14 +250,9 @@ This stack provides extensive customization options. Key variables are managed v
 
 ### 📋 Complete Configuration Options
 
-**This is just a subset.** The stack supports over 20+ configurable options for fine-tuning production workloads:
+ The stack supports over 20+ configurable options arround **Networking** | **Nodepools** | **Observability** | **vLLM Tuning**.
 
-- **Networking**: Custom Pod/Service/LB CIDRs.
-- **Nodepools**: Scaling strategies and eviction policies.
-- **Observability**: Prometheus retention and PV sizing.
-- **vLLM Tuning**: Helm templates and host prefixes.
-
-**📓 See the complete configuration templates:**
+**📓 Configuration templates:**
 
 - **Environment variables**: [`env-vars.template`](./env-vars.template)
 - **Terraform variables**: [`terraform.tfvars.template`](./terraform.tfvars.template)
@@ -400,44 +395,162 @@ No modules.
 
 ## 🚀 Quick Start
 
-1. **Clone & Setup Environment**:
+### ⚙️ Provisioning Highlights
+
+* ✅ **One-Click Deployment**: 100% automated vLLM stack with zero manual intervention
+
+* ✅ **Zero Dependencies**: No pre-existing cluster/kubeconfig required - built from scratch with just a user token
+
+* ✅ **Full Add-on Suite**: Traefik, cert-manager, metrics-server, Let's Encrypt Issuers, Prometheus, and Grafana included
+
+* ✅ **Smart GPU Mapping**: Friendly names (H100, B200) → actual CoreWeave instance IDs with AZ validation (fails fast if unsupported)
+
+* ✅ **Production SSL**: Auto-provisioned HTTPS for vLLM & Grafana via
+  ```
+  https://<app_prefix>.<org_id>-<cluster_name>.coreweave.app
+  ```
+
+* ✅ **Race Condition Guards**:
+    
+| Guard Type | Purpose | Behavior |
+|------------|---------|----------|
+| **NodePool State Polling** | Ensures nodes are Ready | Waits for node Ready status before deploying workloads |
+| **DNS Readiness Guard** | Verifies API server DNS propagation | Polls Cloudflare DNS for K8s API server resolution before proceeding |
+ 
+
+## 🔵 Deployment Steps
+
+### 1. Clone the Repository
+```bash
+git clone https://github.com/CloudThrill/vllm-production-stack-terraform
+cd vllm-production-stack-terraform/coreweave/cks-vllm
+
+```
+
+### 2. Configure the Environment
 
 ```bash
 cp env-vars.template env-vars
-vim env-vars  # Set HF_TOKEN and ORG_ID
+vi env-vars  # Set cw_token, org_id, and hf_token
 source env-vars
 
 ```
 
-2. **Deploy**:
+### 3. Deploy Infrastructure
 
 ```bash
-terraform init && terraform apply
+terraform init
+terraform plan
+terraform apply
 
 ```
 
 ---
 
-## 🚀 Quick Start
+## 🧪 Quick Test
 
-### ⚙️ Provisioning Logic
+### Setup
 
-| Phase | Component | Action | Condition |
-| :--- | :--- | :--- | :--- |
-| **1. Infra** | **Networking** | LB CIDR (`10.20.1.0/22`) + Pod/Service CIDRs | Always |
-| | **CKS Cluster** | Managed v1.34 control plane + CPU pool | Always |
-| | **GPU NodePool** | Bare-metal H100/L40S/A100 (1-8 nodes) | Always |
-| **2. Storage** | **VAST Data** | High-perf model weight persistence | Always |
-| **3. Add-ons** | **Ingress + TLS** | NGINX + cert-manager (Let's Encrypt) | Always |
-| **4. vLLM Stack** | **HF Token** | Create `hf-token-secret` for model pulls | `enable_vllm = true` |
-| | **vLLM Helm** | GPT-OSS-20B, GPU scheduling, init-container | `enable_vllm = true` |
+**Set kubectl context:**
+```bash
+export KUBECONFIG="./kubeconfig"
+```
 
-### 🔵 Deployment Steps
+### 1. Verify Endpoints
 
-1. **Clone & Enter**:
-   ```bash
-   git clone [https://github.com/CloudThrill/vllm-production-stack-terraform](https://github.com/CloudThrill/vllm-production-stack-terraform)
-   cd vllm-production-stack-terraform/coreweave/
+The deployment provides the following endpoints:
+
+- **vLLM API**: `https://vllm.poc3ea-vllm-cw-prod.coreweave.app/v1`
+- **Grafana**: `https://grafana.poc3ea-vllm-cw-prod.coreweave.app`
+
+Extract from Terraform output:
+```bash
+terraform output vllm_stack_summary
+```
+
+Or set as environment variable:
+```bash
+export VLLM_API_URL="https://vllm.poc3ea-vllm-cw-prod.coreweave.app/v1"
+export GRAFANA_URL="https://grafana.poc3ea-vllm-cw-prod.coreweave.app"
+```
+
+### 2. List Available Models
+```bash
+curl -k "${VLLM_API_URL}/models" | jq .
+```
+
+**Expected output:**
+```json
+{
+  "object": "list",
+  "data": [
+    {"id": "gpt-oss-120b", "object": "model", "created": 1739145600},
+    {"id": "gemma-3-27b-vision", "object": "model", "created": 1739145600},
+    {"id": "qwen3-next-80b", "object": "model", "created": 1739145600},
+    {"id": "trinity-mini", "object": "model", "created": 1739145600}
+  ]
+}
+```
+
+### 3. Test Text Completion
+
+**GPT-OSS-120B (Flagship Reasoning):**
+```bash
+curl -k "${VLLM_API_URL}/completions" \
+    -H "Content-Type: application/json" \
+    -d '{
+        "model": "gpt-oss-120b",
+        "prompt": "The future of AI infrastructure is",
+        "max_tokens": 50,
+        "temperature": 0.7
+    }' | jq .choices[].text
+```
+
+**Trinity Mini (Agentic/Tool Calling):**
+```bash
+curl -k "${VLLM_API_URL}/chat/completions" \
+    -H "Content-Type: application/json" \
+    -d '{
+        "model": "trinity-mini",
+        "messages": [{"role": "user", "content": "Explain tensor parallelism in 2 sentences"}],
+        "max_tokens": 100,
+        "temperature": 0.7
+    }' | jq .choices[].message.content
+```
+
+---
+
+## 🔬 Observability
+
+### Access Grafana
+
+Open in browser: `https://grafana.poc3ea-vllm-cw-prod.coreweave.app`
+
+**Login Credentials:**
+- **User**: `admin`
+- **Password**: Fetch using:
+```bash
+kubectl get secret -n kube-prometheus-stack kube-prometheus-stack-grafana \
+  -o jsonpath='{.data.admin-password}' | base64 -d && echo
+```
+
+### Pre-configured Dashboards
+
+Navigate to **Dashboards** → **Browse**:
+
+1. **vLLM - Production Stack**
+   - Request latency (TTFT, TPOT)
+   - Throughput (tokens/sec)
+   - Queue depth
+   - Cache hit rates
+
+2. **vLLM - OCI Enhanced**
+   - GPU utilization per model
+   - KV cache usage
+   - Prefill vs decode metrics
+   - Expert activation (MoE models)
+
+---
 ## 🎯 Troubleshooting
 
 **1. Let's Encrypt Staging Warning**
