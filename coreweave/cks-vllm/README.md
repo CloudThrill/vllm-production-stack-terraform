@@ -392,9 +392,7 @@ No modules.
 
 ---
 
-## 🚀 Quick Start
-
-### ⚙️ Provisioning Highlights
+## ⚙️ Provisioning Highlights 
 
 * ✅ **One-Click Deployment**: 100% automated vLLM stack with zero manual intervention
 
@@ -417,7 +415,7 @@ No modules.
 | **DNS Readiness Guard** | Verifies API server DNS propagation | Polls Cloudflare DNS for K8s API server resolution before proceeding |
  
 
-## 🔵 Deployment Steps
+## 🚀 Quick Start
 
 ### 1. Clone the Repository
 ```bash
