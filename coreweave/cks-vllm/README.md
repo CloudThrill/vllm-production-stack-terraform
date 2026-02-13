@@ -64,9 +64,9 @@ flowchart TD
 
 1. [Project Structure](#-project-structure)
 2. [Prerequisites](#-prerequisites)
-3. [What Terraform Deploys](#%F0%9F%8F%97%EF%B8%8F-what-terraform-deploys)
+3. [What Terraform Deploys](#%EF%B8%8F-what-terraform-deploys)
 4. [Hardware Options](#%EF%B8%8Fcoreweave-gpu-instance-types-available)
-5. [Configuration Knobs](#%F0%9F%9B%A0%EF%B8%8Fconfiguration-knobs)
+5. [Configuration Knobs](#%EF%B8%8F-configuration-knobs)
 6. [Quick Start](#-quick-start)
 7. [Quick Test](#-quick-test)
 8. [Observability](#-observability)
