@@ -202,8 +202,7 @@ CoreWeave CKS add-ons are pre-optimized for AI workloads. The GPU operator is no
 - **Default Helm chart**: [gpu-gpt-oss-20-cw.tpl](./config/llm-stack/helm/gpu/gpu-gpt-oss-20-cw.tpl)
 - **2x VLLM Dashbaords** (kvcache and Model inference performence)
 ---
-## 💡 Hardware Options
-You can choose to deploy VLLM production stack on different GPU platforms
+
 ## 🖥️Coreweave GPU Instance Types Available
 
 From high-density Blackwell clusters to cost-optimized L40S inference nodes. View the full [CoreWeave GPU Catalog](https://www.coreweave.com/gpu-cloud-pricing).
