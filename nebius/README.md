@@ -210,7 +210,7 @@ Core Nebius MK8s add-ons can be installed using their application catalog but th
 
 You can choose to deploy VLLM production stack on different GPU platforms and presets
 
-## 🖥️ AWS GPU Instance Types Available
+## 🖥️ Nebius GPU Instance Types Available
 
 (T4 · L4 · V100 · A10G · A100) . Read the full list of AWS GPU instance offering [GPU instances reference](https://docs.nebius.com/compute/virtual-machines/types).
 <details><summary><b> Available GPU instances</b></summary>
@@ -597,5 +597,6 @@ ingress:
 - vLLM Docs: [https://docs.vllm.ai/](https://docs.vllm.ai/)
 
 <!-- markdownlint-disable MD051 MD036 MD056 -->
+
 
 
