@@ -414,6 +414,7 @@ No modules.
 | **NodePool State Polling** | Ensures nodes are Ready | Waits for node Ready status before deploying workloads |
 | **DNS Readiness Guard** | Verifies API server DNS propagation | Polls Cloudflare DNS for K8s API server resolution before proceeding |
  
+---
 
 ## 🚀 Quick Start
 
