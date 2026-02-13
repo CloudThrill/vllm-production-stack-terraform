@@ -10,7 +10,7 @@ flowchart TD
 
     subgraph "CoreWeave Cloud Infrastructure"
         C[VPC Networking] --> D[Managed K8s CKS]
-        D --> E[GPU NodePool<br>H100 / A100 / L40S<br>autoscaling enabled]
+        D --> E[GPU NodePool<br>H100 / H200 / A100 / L40S<br>autoscaling enabled]
         D --> F[CPU NodePool<br>generic workloads]
         D --> R[Cluster Endpoint<br>API Server URL]
     end
@@ -55,7 +55,7 @@ flowchart TD
 | **Stack** | Terraform ◦ Helm ◦ CoreWeave Cloud ◦ CKS (K8s) ◦ Observability ◦ LetsEncrypt ◦ vLLM |
 | **Module** | Opinionated **GPU-first** blueprint for production vLLM inference on CoreWeave |
 | **Networking** | **CoreWeave VPC** with custom CIDR pools for Pods, Services, and LoadBalancers |
-| **Inference hardware** | **NVIDIA H100, A100, or L40S** NodePools with native CKS autoscaling |
+| **Inference hardware** | **NVIDIA H100, H200, GB200, A100, or L40S** NodePools with native CKS autoscaling |
 
 ---
 
@@ -239,6 +239,7 @@ This stack provides extensive customization options to tailor your deployment:
 | `zone` | `US-EAST-06A` | Specific CoreWeave Availability Zone |
 | `cluster_name` | `vllm-cw-prod` | Name of the CKS Managed Cluster |
 | `k8s_version` | `1.34` | Kubernetes version (e.g., 1.34, 1.35) |
+| `enable_nodepool_gpu`| `true` | Enable/Disable external GPU node |
 | `public_endpoint` | `true` | Enable/Disable external API access |
 | `cpu_instance_id` | `cd-gp-i64-erapids` | Bare-metal CPU type (e.g., Turin, Emerald Rapids) |
 | `gpu_instance_type` | `H100` | Bare-metal GPU type (H100, A100, L40S, etc.) |
@@ -432,6 +433,44 @@ cp env-vars.template env-vars
 vi env-vars  # Set cw_token, org_id, and hf_token
 source env-vars
 
+```
+**Usage examples**
+
+- **Option 1: Through Environment Variables**
+
+```bash
+   # Copy and customize
+   $ cp env-vars.template env-vars
+   $ vi env-vars
+################################################################################
+# 🔐 CORE PROVIDER CREDENTIALS AND REGION
+################################################################################
+export TF_VAR_cw_token="<YOUR_TOKEN>"    # (required) - CoreWeave API token
+export TF_VAR_org_id="<YOUR_ORG_ID>"     # (required) - CoreWeave Organization ID
+export TF_VAR_region="US-EAST-06"        # Deployment region
+export TF_VAR_zone="US-EAST-06A"         # Specific availability zone
+
+################################################################################
+# ☸️ CoreWeave Cluster Configuration
+################################################################################
+export TF_VAR_k8s_version="1.35"          # Kubernetes version
+
+################################################################################
+# 🧠 vLLM Inference Configuration
+################################################################################
+export TF_VAR_enable_vllm="true"
+export TF_VAR_hf_token="<HF_TOKEN>"       # Hugging Face token (sensitive)
+export TF_VAR_gpu_vllm_helm_config="config/llm-stack/helm/gpu/gpu-gpt-oss-20-cw.tpl"
+
+################################################################################
+# ⚙️ GPU / Nodegroup Settings
+################################################################################
+export TF_VAR_enable_nodepool_gpu="true" 
+export TF_VAR_gpu_instance_type="H100"    # GPU platform (H100, L40S, A100)
+export TF_VAR_cpu_instance_id="cd-gp-i64-erapids" # Bare-metal CPU pool
+export TF_VAR_gpu_node_target="1"         # Number of GPU nodes
+
+$ source env-vars
 ```
 
 ### 3. Deploy Infrastructure
