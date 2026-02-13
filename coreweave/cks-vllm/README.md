@@ -52,29 +52,30 @@ flowchart TD
 | Project Item | Description |
 | --- | --- |
 | **Author** | [@cloudthrill](https://cloudthrill.ca) |
-| **Stack** | Terraform ◦ Helm ◦ CoreWeave Cloud ◦ CKS (K8s) ◦ Observability ◦ LetsEncrypt ◦ vLLM |
-| **Module** | Opinionated **GPU-first** blueprint for production vLLM inference on CoreWeave |
-| **Networking** | **CoreWeave VPC** with custom CIDR pools for Pods, Services, and LoadBalancers |
+| **Stack** | Terraform ◦ Helm ◦ CoreWeave Cloud ◦ CKS (K8s) ◦ vLLM Inference ◦ Observability ◦ LetsEncrypt |
+| **Module** | Opinionated **GPU-first** blueprint for vLLM production stack inference on CoreWeave |
+| **Networking** | **Cilium CNI** + Traefik with custom CIDR pools for Pods, Services, and LoadBalancers |
 | **Inference hardware** | **NVIDIA H100, H200, GB200, A100, or L40S** NodePools with native CKS autoscaling |
+| **Included LLM catalog** | Gpt-oss(20b/120b), Qwen3-next 80B, Gemma-3-27b-vision, GLM 4.7 flash, Trinity-Mini (3 charts)|
 
 ---
 
 ## 📋 Table of Contents
 
-1. [Project Structure](https://www.google.com/search?q=%23-project-structure)
-2. [Prerequisites](https://www.google.com/search?q=%23-prerequisites)
-3. [What Terraform Deploys](https://www.google.com/search?q=%23%25EF%25B8%258F-what-terraform-deploys)
-4. [Hardware Options](https://www.google.com/search?q=%23-hardware-options)
-5. [Configuration Knobs](https://www.google.com/search?q=%23%25EF%25B8%258Fconfiguration-knobs)
-6. [Quick Start](https://www.google.com/search?q=%23-quick-start)
-7. [Quick Test](https://www.google.com/search?q=%23-quick-test)
-8. [Observability](https://www.google.com/search?q=%23-observability)
-9. [Troubleshooting](https://www.google.com/search?q=%23-troubleshooting)
-10. [Additional Resources](https://www.google.com/search?q=%23-additional-resources)
+1. [Project Structure](#-project-structure)
+2. [Prerequisites](#-prerequisites)
+3. [What Terraform Deploys](#%F0%9F%8F%97%EF%B8%8F-what-terraform-deploys)
+4. [Hardware Options](#%EF%B8%8Fcoreweave-gpu-instance-types-available)
+5. [Configuration Knobs](#%F0%9F%9B%A0%EF%B8%8Fconfiguration-knobs)
+6. [Quick Start](#-quick-start)
+7. [Quick Test](#-quick-test)
+8. [Observability](#-observability)
+9. [Troubleshooting](#-troubleshooting)
+10. [Additional Resources](#-additional-resources)
 
 ---
 
-## 📂 Project Structure
+## 📂 Project Structure 
 
 ```bash
 ./
@@ -152,9 +153,8 @@ Learn more about cwic commands on my [coreweave-blog-post](https://cloudthrill.c
 
 ---
 
-## 🏗️ What Terraform Deploys (example: gpt-oss-20b)
-
-Total end-to-end deployment for a production Reasoning API (GPT-OSS-20B) is approximately **40 minutes**. 
+## 🏗️ What Terraform Deploys 
+(example: gpt-oss-20b): Total end-to-end deployment for a production Reasoning API (GPT-OSS-20B) is approximately **40 minutes**. 
 | Phase | Component | Duration | Observation |
 | :--- | :--- | :--- | :--- |
 | **Phase 1** | **VPC & CKS API** | ~4 min | Control plane initialization. |
@@ -167,40 +167,68 @@ Total end-to-end deployment for a production Reasoning API (GPT-OSS-20B) is appr
 There are 3 different vllm deployment charts:
 - [gpu-gpt-oss-20b](./confi/gpu-gpt-oss-20-cw.tpl) | [oss flagship LLM collection](./config/gpu-gpt-qwn-gem-glm-cw.tpl) | [tiny-llama](./config/gpu-llama-light-ingress-cw.tpl) . (for DeepseekV3 read 🐳here)
 
+---
+
+## ⚙️ Provisioning Highlights 
+
+* ✅ **One-Click Deployment**: 100% automated vLLM stack with zero manual intervention
+
+* ✅ **Zero Dependencies**: No pre-existing cluster/kubeconfig required - built from scratch with just a user token
+
+* ✅ **Full Add-on Suite**: Traefik, cert-manager, metrics-server, Let's Encrypt Issuers, Prometheus, and Grafana included
+
+* ✅ **Smart GPU Mapping**: Friendly names (H100, B200) → actual CoreWeave instance IDs with AZ validation (fails fast if unsupported)
+
+* ✅ **Production SSL**: Auto-provisioned HTTPS for vLLM & Grafana via
+  ```
+  https://<vllm_prefix>.<org_id>-<cluster_name>.coreweave.app
+  ```
+
+* 🏁🛑 **Race Condition Guards**:
+    
+| Guard Type | Purpose | Behavior |
+|------------|---------|----------|
+| **NodePool State Polling** | Ensures nodes are Ready | Waits for node Ready status before deploying workloads |
+| **DNS Readiness Guard** | Verifies API server DNS propagation | Polls Cloudflare DNS for K8s API server resolution before proceeding |
+ 
+---
+
 
 ### 1. 📶 Networking (template)
-
-- **Load Balancer CIDR**: `10.20.0.0/22` dedicated prefix for ingress endpoints.
-- **Pod CIDR**: `10.244.0.0/16` providing a massive IP space for high-density GPU scaling.
-- **Service CIDR**: `10.96.0.0/16` for internal cluster-IP orchestration.
-- **CNI**: Native Cilium CNI for high-performance, eBPF-powered policy enforcement.
-- **Ingress**: Traefik Ingress Controller exposed via **CoreWeave Load Balancer**.
+| Feature | Configuration |
+| :--- | :--- |
+| **Load Balancer CIDR** | `10.20.0.0/22` dedicated prefix for ingress endpoints. |
+| **Pod CIDR** | `10.244.0.0/16` providing a massive IP space for high-density GPU scaling. |
+| **Service CIDR** | `10.96.0.0/16` for internal cluster-IP orchestration. |
+| **CNI** | Native Cilium CNI for eBPF-powered policy enforcement, Overlay (VXLAN), and Hubble flow observability. | 
+| **Ingress** | Traefik Ingress Controller exposed via **CoreWeave Load Balancer**. |
+| **SSL Certification** |  Letsencrypt ClusterIssuer encrypts and certifies (VLLM and grafana) Ingress endpoints. |
 
 ### 2. ☸️ CKS Cluster
 
 - Control plane v1.35 with two managed node-group types (CPU and GPU)
+- Storage:	VAST Data Storage is a High-throughput storage for massive model weights (shared-vast)
 
 ### 3. 📦 Add-ons
 
-CoreWeave CKS add-ons are pre-optimized for AI workloads. The GPU operator is not necessary as drivers are pre-baked into the node images.
-
+Core CKS add-ons are pre-optimized for AI workloads. We added below K8s addons to enable this build 
 | Category | Add-on | Notes |
 | :--- | :--- | :--- |
-| **CNI** | **Cilium** | Overlay, eBPF, Hubble |
-| **Storage** | **VAST Data Storage** | High-throughput storage for massive model weights (shared-vast) |
 | **Ingress/LB** | **Traefik Ingress** | Integrated with CoreWeave LB |
-| **Observability** | **kube-prometheus-stack** | Includes GPU-specific DCGM metrics |
+| **Observability** | **kube-prometheus-stack/metrics-server** | Includes GPU-specific DCGM metrics |
 | **Security** | **cert-manager** | Let's Encrypt HTTP-01 automation |
 | **GPU** | **Pre-baked NVIDIA drivers** | No separate GPU operator required |
 
 ### 4. 🧠 vLLM Production Stack (CPU/GPU)
+| Feature | Implementation |
+| :--- | :--- |
+| **Model Serving** | (Default) Single GPT-OSS-20B model replica. |
+| **Load Balancing** | Round-robin request router service. |
+| **Hugging Face Token** | Securely stored as a Kubernetes Secret. |
+| **LLM Storage** | Init container for persistent model caching under `/data/models/` using VAST Data. |
+| **Default Helm Chart** | [`gpu-gpt-oss-20-cw.tpl`](./config/llm-stack/helm/gpu/gpu-gpt-oss-20-cw.tpl). |
+| **Observability** | **2x vLLM Dashboards**: Pre-configured Grafana views for KV Cache and Inference Performance. |
 
-- **Model serving**: (Default) Single GPT-OSS-20B model replica
-- **Load balancing**: Round-robin request router service
-- **Hugging Face token**: Stored as Kubernetes Secret
-- **LLM Storage**: Init container Persistent model caching under `/data/models/`
-- **Default Helm chart**: [gpu-gpt-oss-20-cw.tpl](./config/llm-stack/helm/gpu/gpu-gpt-oss-20-cw.tpl)
-- **2x VLLM Dashbaords** (kvcache and Model inference performence)
 ---
 
 ## 🖥️Coreweave GPU Instance Types Available
@@ -393,30 +421,6 @@ No modules.
 
 ---
 
-## ⚙️ Provisioning Highlights 
-
-* ✅ **One-Click Deployment**: 100% automated vLLM stack with zero manual intervention
-
-* ✅ **Zero Dependencies**: No pre-existing cluster/kubeconfig required - built from scratch with just a user token
-
-* ✅ **Full Add-on Suite**: Traefik, cert-manager, metrics-server, Let's Encrypt Issuers, Prometheus, and Grafana included
-
-* ✅ **Smart GPU Mapping**: Friendly names (H100, B200) → actual CoreWeave instance IDs with AZ validation (fails fast if unsupported)
-
-* ✅ **Production SSL**: Auto-provisioned HTTPS for vLLM & Grafana via
-  ```
-  https://<app_prefix>.<org_id>-<cluster_name>.coreweave.app
-  ```
-
-* ✅ **Race Condition Guards**:
-    
-| Guard Type | Purpose | Behavior |
-|------------|---------|----------|
-| **NodePool State Polling** | Ensures nodes are Ready | Waits for node Ready status before deploying workloads |
-| **DNS Readiness Guard** | Verifies API server DNS propagation | Polls Cloudflare DNS for K8s API server resolution before proceeding |
- 
----
-
 ## 🚀 Quick Start
 
 ### 1. Clone the Repository
@@ -428,51 +432,48 @@ cd vllm-production-stack-terraform/coreweave/cks-vllm
 
 ### 2. Configure the Environment
 
-```bash
-cp env-vars.template env-vars
-vi env-vars  # Set cw_token, org_id, and hf_token
-source env-vars
-
-```
+  ```bash
+    # Copy and customize
+    $ cp env-vars.template env-vars
+    $ vi env-vars
+  ```
 **Usage examples**
 
 - **Option 1: Through Environment Variables**
 
-```bash
+   ```bash
+    ################################################################################
+    # 🔐 CORE PROVIDER CREDENTIALS AND REGION
+    ################################################################################
+    export TF_VAR_cw_token="<YOUR_TOKEN>"    # (required) - CoreWeave API token
+    export TF_VAR_org_id="<YOUR_ORG_ID>"     # (required) - CoreWeave Organization ID
+    export TF_VAR_region="US-EAST-06"        # Deployment region
+    export TF_VAR_zone="US-EAST-06A"         # Specific availability zone
+    ################################################################################
+    # 🧠 vLLM Inference Configuration
+    ################################################################################
+    export TF_VAR_cluster_name="vllm-cw-prod" # default: "vllm-cw-prod"
+    export TF_VAR_enable_vllm="true"
+    export TF_VAR_vllm_host_prefix="vllm"
+    export TF_VAR_hf_token="<HF_TOKEN>"       # Hugging Face token (sensitive)
+    export TF_VAR_gpu_vllm_helm_config="config/llm-stack/helm/gpu/gpu-gpt-oss-20-cw.tpl"
+    ################################################################################
+    # ⚙️ GPU / Nodegroup Settings
+    ################################################################################
+    export TF_VAR_enable_nodepool_gpu="true" 
+    export TF_VAR_gpu_instance_type="H100"    # GPU platform (H100, L40S, A100)
+    export TF_VAR_cpu_instance_id="cd-gp-i64-erapids" # Bare-metal CPU pool
+    export TF_VAR_gpu_node_target="1"         # Number of GPU nodes
+
+    $ source env-vars
+   ```
+- **Option 2: Through Terraform Variables**
+
+  ```bash
    # Copy and customize
-   $ cp env-vars.template env-vars
-   $ vi env-vars
-################################################################################
-# 🔐 CORE PROVIDER CREDENTIALS AND REGION
-################################################################################
-export TF_VAR_cw_token="<YOUR_TOKEN>"    # (required) - CoreWeave API token
-export TF_VAR_org_id="<YOUR_ORG_ID>"     # (required) - CoreWeave Organization ID
-export TF_VAR_region="US-EAST-06"        # Deployment region
-export TF_VAR_zone="US-EAST-06A"         # Specific availability zone
-
-################################################################################
-# ☸️ CoreWeave Cluster Configuration
-################################################################################
-export TF_VAR_k8s_version="1.35"          # Kubernetes version
-
-################################################################################
-# 🧠 vLLM Inference Configuration
-################################################################################
-export TF_VAR_enable_vllm="true"
-export TF_VAR_hf_token="<HF_TOKEN>"       # Hugging Face token (sensitive)
-export TF_VAR_gpu_vllm_helm_config="config/llm-stack/helm/gpu/gpu-gpt-oss-20-cw.tpl"
-
-################################################################################
-# ⚙️ GPU / Nodegroup Settings
-################################################################################
-export TF_VAR_enable_nodepool_gpu="true" 
-export TF_VAR_gpu_instance_type="H100"    # GPU platform (H100, L40S, A100)
-export TF_VAR_cpu_instance_id="cd-gp-i64-erapids" # Bare-metal CPU pool
-export TF_VAR_gpu_node_target="1"         # Number of GPU nodes
-
-$ source env-vars
-```
-
+   $ cp terraform.tfvars.example terraform.tfvars
+   $ vim terraform.tfvars
+  ```
 ### 3. Deploy Infrastructure
 
 ```bash
@@ -482,11 +483,10 @@ terraform apply
 
 ```
 
----
-
 ## 🧪 Quick Test
 
-### apply output
+### terraform apply output
+Example with `vllm_host_prefix="vllm"` and `cluster_name=vllm-cw-prod`
 ```bash
 Apply complete! Resources: 19 added, 0 changed, 0 destroyed.
 
@@ -513,7 +513,7 @@ vllm_stack_summary = <<EOT
 
   🌐 ACCESS ENDPOINTS
   -----------------------------------------------------------
-  VLLM API          : https://vllm.<myorg>-vllm-cw-prod.coreweave.app/v1
+  VLLM API          : https://vllm.<myorg>-vllm-cw-prod.coreweave.app/v1   <<------- * vllm_host_prefix="vllm"
   GRAFANA           : https://grafana.<myorg>-vllm-cw-prod.coreweave.app
 
   🛠️  QUICK START COMMANDS
@@ -529,22 +529,18 @@ vllm_stack_summary = <<EOT
 export KUBECONFIG="./kubeconfig"
 ```
 
-### 1. Verify Endpoints
+### 1. vLLm Router Endpoint
 
-The deployment provides the following endpoints:
+The deployment provides the following vLLM API endpoint:
+```
+terraform output vllm_stack_summary | grep "VLLM API"
 
-- **vLLM API**: `https://vllm.<myorg>-vllm-cw-prod.coreweave.app/v1`
-- **Grafana**: `https://grafana.<myorg>-vllm-cw-prod.coreweave.app`
-
-Extract from Terraform output:
-```bash
-terraform output vllm_stack_summary
+ https://vllm.<myorg>-<myclustername>.coreweave.app/v1
 ```
 
-Or set as environment variable:
+set as environment variable:
 ```bash
 export VLLM_API_URL="https://vllm.<myorg>-vllm-cw-prod.coreweave.app/v1"
-export GRAFANA_URL="https://grafana.<myorg>-vllm-cw-prod.coreweave.app"
 ```
 
 ### 2. List Available Models
@@ -573,10 +569,14 @@ curl -k "${VLLM_API_URL}/completions" \
     -H "Content-Type: application/json" \
     -d '{
         "model": "gpt-oss-120b",
-        "prompt": "The future of AI infrastructure is",
+        "prompt": "Toronto is a",
         "max_tokens": 50,
         "temperature": 0.7
     }' | jq .choices[].text
+
+//*
+"city that is known for its vibrant nightlife, and there are plenty of bars and clubs"
+//*
 ```
 
 **Trinity Mini (Agentic/Tool Calling):**
@@ -590,6 +590,14 @@ curl -k "${VLLM_API_URL}/chat/completions" \
         "temperature": 0.7
     }' | jq .choices[].message.content
 ```
+### 4. Browser WebUI (Optional)
+You can also use [Page Assist](https://chromewebstore.google.com/detail/page-assist-a-web-ui-for/jfgfiigpkhlkbnfnbobbkinehhfdhndo?hl=en) Chrome extension for a lightweight chat UI to test your **vLLM Endoint**.
+<img width="3807" height="600" alt="coreweave_vllm-WUI" src="https://github.com/user-attachments/assets/4c04a0ed-cd89-43b1-b792-665ff28b5ade" />
+**Setup:** Settings → OpenAI Compatible API → Add provider → Base URL: ` https://vllm.<myorg>-vllm-cw-prod.coreweave.app/v1`
+
+
+
+<img width="3639" height="1678" alt="image" src="https://github.com/user-attachments/assets/3eeda894-23b3-4e16-a760-0494770d8372" />
 
 ---
 
@@ -597,50 +605,75 @@ curl -k "${VLLM_API_URL}/chat/completions" \
 
 ### Access Grafana
 
-Open in browser: `https://grafana.<myorg>-vllm-cw-prod.coreweave.app`
-
+The deployment provides the following Grafana URL `https://grafana.<myorg>-<myclustername>.coreweave.app`:
+```
+terraform output vllm_stack_summary | grep "GRAFANA"
+https://grafana.<myorg>-vllm-cw-prod.coreweave.app
+```
 **Login Credentials:**
 - **User**: `admin`
-- **Password**: Fetch using:
-```bash
-kubectl get secret -n kube-prometheus-stack kube-prometheus-stack-grafana \
-  -o jsonpath='{.data.admin-password}' | base64 -d && echo
-```
+- **Password**: Fetch using: `var.grafana_admin_password`
+
 
 ### Pre-configured Dashboards
+   
+1. **vLLM Dashboard**
+   - latency,TTFT, ITL, QPS information , Serving engine load(KV cache usage)
+<p align="center">
+  <img width="600" height="325" alt="coreweave_vllm-dashbaord1 2" src="https://github.com/user-attachments/assets/01bc503b-e991-47f2-aac0-7a3f04d7c17a" />
+</p>
 
-Navigate to **Dashboards** → **Browse**:
-
-1. **vLLM - Production Stack**
-   - Request latency (TTFT, TPOT)
-   - Throughput (tokens/sec)
-   - Queue depth
-   - Cache hit rates
-
-2. **vLLM - OCI Enhanced**
-   - GPU utilization per model
-   - KV cache usage
-   - Prefill vs decode metrics
-   - Expert activation (MoE models)
+2. **vLLM Inference Observability**
+   - GPU utilization per model / Throughput (tokens/sec) / Prefill vs decode metrics / [Prompt|output] length
+<p align="center">
+  <img width="950" height="535" alt="coreweave_vllm-dashbaord2" src="https://github.com/user-attachments/assets/8e6806be-5d7e-4a8a-9278-161bb0b12d05" />
+</p>
+ 
 
 ---
 ## 🎯 Troubleshooting
 
-**1. Let's Encrypt Staging Warning**
-If you see `SSL certificate problem: unable to get local issuer certificate`, this is expected with the staging issuer.
+**1. Let's Encrypt rate limit**
+Let's Encrypt limits duplicate certificate issuance to 5 per week for the exact same set of domain names. If you hit the limit after repeated deploy change the vllm hostname prefix. 
 
-* **Fix**: Use `curl -k` for tests, or set `use_letsencrypt_staging = false` for the final production run.
+  ```
+  export TF_VAR_vllm_host_prefix="vllm-random"  # CHANGE ME
+  ```
 
-**2. Rate Limits (429 Errors)**
-If you hit Let's Encrypt rate limits on your `.coreweave.app` subdomain:
+**2. terraform resources in use after second apply**
+In rare cases terraform refresh might ignore resources for some reason and tries to recreate it durring the second apply. You might want to re-import the resource ito the statefile.
 
-* **Fix**: Switch from `letsencrypt-prod` to `letsencrypt-staging` in your `terraform.tfvars`.
+<details> <summary> <b> Fix</b>: Run <code>terraform import <resource></code> </summary> 
+
+```bash
+//🌐 Import resource examples //
+
+# Import GPU nodepool
+terraform import 'kubectl_manifest.nodepool_gpu["gpu"]' "compute.coreweave.com/v1alpha1//NodePool//gpu-pool//"
+
+##### networking
+terraform import 'helm_release.traefik' traefik/traefik
+terraform import 'kubectl_manifest.letsencrypt_issuer["letsencrypt"]' 'cert-manager.io/v1//ClusterIssuer//letsencrypt-prod//'
+
+## cluster addons
+terraform import 'helm_release.metrics_server["metrics_server"]' kube-system/metrics-server
+terraform import  'helm_release.kube_prometheus_stack["kube_prometheus_stack"]' kube-prometheus-stack/kube-prometheus-stack
+terraform import 'helm_release.cert_manager["cert-manager"]'  cert-manager/cert-manager
+
+#### vLLM
+terraform import 'kubectl_manifest.vllm_service_monitor["vllm_monitor"]' "monitoring.coreos.com/v1//ServiceMonitor//vllm-monitor
+
+#### vLLM dashbaord
+terraform import 'kubernetes_config_map.vllm_dashboard["vllm_dashboard"]' kube-prometheus-stack/vllm-dashboard
+terraform import 'kubernetes_config_map.vllm_dashboard["vllm_dashboard_oci"]' kube-prometheus-stack/vllm-dashboard-oci
+```
+</details>
 
 ---
 
 ## 📚 Additional Resources
 
-* [CoreWeave Cloud Docs](https://docs.coreweave.com)
+* [CoreWeave terraform provider](https://registry.terraform.io/providers/coreweave/coreweave/latest/docs)
 * [vLLM Production Stack](https://github.com/vllm-project/production-stack)
 
 ---
