@@ -485,44 +485,43 @@ terraform apply
 
 ## 🧪 Quick Test
 
-### terraform apply output
-Example with `vllm_host_prefix="vllm"` and `cluster_name=vllm-cw-prod`
-```bash
-Apply complete! Resources: 19 added, 0 changed, 0 destroyed.
+### Terraform apply output
+- Example with `vllm_host_prefix="vllm"` and `cluster_name=vllm-cw-prod`
 
-Outputs:
-
-vllm_stack_summary = <<EOT
-✅ CoreWeave CKS cluster deployed successfully!
-
-  🚀 VLLM PRODUCTION STACK ON COREWEAVE 🚀
-  -----------------------------------------------------------
-  ORG ID            : myorg
-  CLUSTER           : vllm-cw-prod 
-  ENDPOINT          : https://<myorg>-2160f14f.k8s.us-east-06a.coreweave.com
-  VPC               : vllm-vpc (US-EAST-06A)
-  NETWORKING        : lb-cidr: 10.20.0.0/22 | pod-cidr: 10.244.0.0/16 | service-cidr: 10.96.0.0/16
-
-  🖥️  NODEPOOL INFRASTRUCTURE
-  -----------------------------------------------------------
-  CPU POOL [cd-gp-i64-erapids] : cpu-pool
-  GPU POOL [gd-8xh100ib-i128] : gpu-pool
-  CPU SCALING       : [target=1, min=1, max=2, autoscaling=true]
-  GPU SCALING       : [target=1, min=1, max=2, autoscaling=true]
-  VLLM CONFIG       : ./config/llm-stack/helm/gpu/gpu-gpt-oss-20-cw.tpl
-
-  🌐 ACCESS ENDPOINTS
-  -----------------------------------------------------------
-  VLLM API          : https://vllm.<myorg>-vllm-cw-prod.coreweave.app/v1   <<------- * vllm_host_prefix="vllm"
-  GRAFANA           : https://grafana.<myorg>-vllm-cw-prod.coreweave.app
-
-  🛠️  QUICK START COMMANDS
-  -----------------------------------------------------------
-  1. Set Context   : export KUBECONFIG="./kubeconfig"
-  2. Test Model    : curl -k "https://vllm.<myorg>-vllm-cw-prod.coreweave.app/v1/models"
-
-  Built with ❤️ by @Cloudthrill
-```
+    ```bash
+    Apply complete! Resources: 19 added, 0 changed, 0 destroyed.
+    
+    Outputs:
+    
+    vllm_stack_summary = <<EOT
+    ✅ CoreWeave CKS cluster deployed successfully!
+    
+      🚀 VLLM PRODUCTION STACK ON COREWEAVE 🚀
+      -----------------------------------------------------------
+      ORG ID            : myorg
+      CLUSTER           : vllm-cw-prod 
+      ENDPOINT          : https://<myorg>-2160f14f.k8s.us-east-06a.coreweave.com
+      VPC               : vllm-vpc (US-EAST-06A)
+      NETWORKING        : lb-cidr: 10.20.0.0/22 | pod-cidr: 10.244.0.0/16 | service-cidr: 10.96.0.0/16
+    
+      🖥️  NODEPOOL INFRASTRUCTURE
+      -----------------------------------------------------------
+      CPU POOL [cd-gp-i64-erapids] : cpu-pool
+      GPU POOL [gd-8xh100ib-i128] : gpu-pool
+      CPU SCALING       : [target=1, min=1, max=2, autoscaling=true]
+      GPU SCALING       : [target=1, min=1, max=2, autoscaling=true]
+      VLLM CONFIG       : ./config/llm-stack/helm/gpu/gpu-gpt-oss-20-cw.tpl
+    
+      🌐 ACCESS ENDPOINTS
+      -----------------------------------------------------------
+      VLLM API          : https://vllm.<myorg>-vllm-cw-prod.coreweave.app/v1   <<------- * vllm_host_prefix="vllm"
+      GRAFANA           : https://grafana.<myorg>-vllm-cw-prod.coreweave.app
+    
+      🛠️  QUICK START COMMANDS
+      -----------------------------------------------------------
+      1. Set Context   : export KUBECONFIG="./kubeconfig"
+      2. Test Model    : curl -k "https://vllm.<myorg>-vllm-cw-prod.coreweave.app/v1/models"
+    ```
 
 **Set kubectl context:**
 ```bash
