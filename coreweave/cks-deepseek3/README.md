@@ -854,8 +854,9 @@ more /tmp/ray/session_latest/logs/raylet.out
 tail -f /tmp/ray/session_latest/logs/raylet.out
 ```
 
-<details><summary><b>Note</b>(Monitoring progress)</summary>
-When you see <code>`100% Completed`</code> followed by <code>'RayWorkerWrapper PID'</code>, weights are loaded into CPU memory and now uploading to GPU VRAM. Check `worker-*.out` for VRAM allocation progress.
+<details><summary><b>When to monitor worker progress</b></summary>
+
+  When you see <code>`100% Completed`</code> followed by <code>'RayWorkerWrapper PID'</code>, weights are loaded into CPU memory and now uploading to GPU VRAM. Check `worker-*.out` for VRAM allocation progress.
 </details>
 
 ---
