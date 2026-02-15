@@ -2,9 +2,9 @@
 
 <img width="2048" height="1079" alt="image" src="https://github.com/user-attachments/assets/ee7db748-4f19-4a6d-9dea-bdd1c75fa22d" />
 
-## 🐋 DeepSeek Distributed Inference
+## 🦣 DeepSeek Distributed Inference
 <div style="text-align: justify;">
-✍🏼This project transforms a "giant" model into a production-ready reasoning engine, proving that complex, multi-node sharding can be stabilized in <b>CoreWeave(CKS)</b>. It deploys <b>DeepSeek-V3.2</b> model (<b>685B</b> params) by sharding <b>~643GB**</b> of <b>FP8</b> weights across a multi-node 16xGPU fabric. It leverages <b>KubeRay</b> for orchestration and InfiniBand for low-latency Mixture-of-Experts (MoE) routing along with tensor and pipeline parallelism.
+✍🏼This project transforms a "giant" model into a production-ready reasoning engine, proving that complex, multi-node sharding can be stabilized in <b>CoreWeave(CKS)</b>. It deploys <b>DeepSeek-V3.2</b> model (<b>685B</b> params) by sharding <b>~643GB</b> of <b>FP8</b> weights across a multi-node 16xGPU fabric. It leverages <b>KubeRay</b> for orchestration and InfiniBand for low-latency Mixture-of-Experts (MoE) routing along with tensor and pipeline parallelism.
 </div> <br>
 
 
@@ -20,6 +20,8 @@
 ---
 
 ## ✨ Core Achievements
+
+<img width="700" height="500" alt="image" src="https://github.com/user-attachments/assets/eb8a2b32-51ff-4131-9bf9-e3a93e805b97" />
 
 * **685B Model Sharding**: TP=8 + PP=2 across 2×8xH100 nodes (16 GPUs total)
 * **InfiniBand Optimization**: High-speed backplane for low-latency MoE routing
@@ -77,6 +79,30 @@
 ```
 
 ---
+## ⚙️ Provisioning Highlights
+
+* ✅ **One-Click Deployment**: 100% automated vLLM stack with zero manual intervention
+
+
+* ✅ **Zero Dependencies**: No pre-existing cluster/kubeconfig required - built from scratch with just a user token
+
+* ✅ **Full Add-on Suite**: Traefik, cert-manager, metrics-server, Let's Encrypt Issuers, Prometheus, and Grafana included
+
+* ✅ **Smart GPU Mapping**: Friendly names (H100, B200) → actual CoreWeave instance IDs with AZ validation (fails fast if unsupported)
+
+* ✅ **Production SSL**: Auto-provisioned HTTPS for vLLM & Grafana via
+  ```
+  https://<vllm_prefix>.<org_id>-<cluster_name>.coreweave.app
+  ```
+
+* 🏁🛑 **Race Condition Guards**:
+
+| Guard Type | Purpose | Behavior |
+|------------|---------|----------|
+| **NodePool State Polling** | Ensures nodes are Ready | Waits for node Ready status before deploying workloads |
+| **DNS Readiness Guard** | Verifies API server DNS propagation | Polls Cloudflare DNS for K8s API server resolution before proceeding |
+
+---
 
 ## ✅ Prerequisites
 
@@ -119,12 +145,18 @@ Learn more about cwic commands on my [coreweave-blog-post](https://cloudthrill.c
 
 ---
 
-## 🛠️ DeepSeek Setup
+## 🔍 DeepSeek Setup
 
 This build required its dedicated Git repo because the following components were not present in the original [cks-vllm stack](https://github.com/CloudThrill/vllm-production-stack-terraform/tree/main/coreweave/cks-vllm) 
-### DeepSeekv3.2 Deployment chart:
-This stack has a single vllm deployment chart [gpu-deepseek-v32.tpl](./config/gpu-deepseek-v32.tpl) since it takes two nodes to serve Deepseekv32 🐳 .
+<p align="center">
+  <img width="700" height="529" alt="image" src="https://github.com/user-attachments/assets/43bfe1b0-cb89-4017-b1fb-36eb8c6b58c5" />
+</p>
 
+>[!note]
+> **KubeRay** is the official operator for Ray and vLLM uses Ray as its default distributed engine.
+
+### DeepSeekv3.2 Deployment Chart:
+This stack has a single vllm deployment chart [gpu-deepseek-v32.tpl](./config/gpu-deepseek-v32.tpl) since it takes two nodes to serve Deepseekv32 🐳 .
 ### 1. Kuberay orchestration (installation using helm)
 
 The Terraform configuration manages the **KubeRay Operator** and the **RayCluster** resource as a single unit.
@@ -148,7 +180,55 @@ resource "helm_release" "kuberay_operator" {
 }
 ```
 
-### 2. KubeRay Worker Config (`gpu-deepseeek-v32.tpl`)
+### 2. KubeRay head Config (Defined by modelSpec)
+The KubeRay head will run in the master node and will use raprotcol to communicate with the worker to orchestrate model serving
+```yaml
+# ======================================================
+# GPU 2-3: DeepSeek-V3.2 (The MoE Titan) head
+# ======================================================
+  modelSpec:
+  - name: "deepseek-v32-fp8"
+    repository: "vllm/vllm-openai"
+    tag: "v0.15.1"
+    modelURL: "deepseek-ai/DeepSeek-V3.2"
+    replicaCount: 1
+    requestGPU: 8
+    requestCPU: 16
+    requestMemory: "128Gi"
+    limitCPU: 32
+    limitMemory: "200Gi"
+    pvcStorage: "800Gi"  # INCREASED: Must be > 700GB for DeepSeek-V3.2
+    storageClass: "shared-vast"
+    pvcAccessMode:              # ← ADD THIS
+      - ReadWriteMany           # ← RWX for multi-node access needed by PP=2
+    env:
+      - name: VLLM_ATTENTION_BACKEND
+        value: "FLASHINFER" #  Speed: Optimized for DeepSeek's MLA architecture
+      - name: NCCL_CUMEM_ENABLE # <--- ADD THIS for stability
+        value: "0"        
+      - name: NCCL_IB_DISABLE
+        value: "0"        
+    vllmConfig:
+      enableChunkedPrefill: true
+      enablePrefixCaching: true 
+      tensorParallelSize: 8   # 8 lowers performance of deepseek32 on H100 but necesary to fit 700GB+ model on 8 cards with fp8
+      pipelineParallelSize: 2 # 
+      maxModelLen: 16384
+      extraArgs:
+        - "--download-dir=/data/models"
+        - "--disable-log-requests"
+        - "--trust-remote-code"
+        - "--quantization=fp8"            # This handles the memory saving
+        - "--gpu-memory-utilization=0.92" # DeepSeek is  using half of 8 cards
+        - "--enforce-eager"               # Prevents CUDA graph overhead at high utilization    
+        - "--tokenizer-mode=deepseek_v32"
+        - "--distributed-executor-backend=ray"
+        - "--chat-template"
+        - |
+          ${lb}% if add_generation_prompt %${rb}<${pipe}begin of sentence${pipe}>${lb}% endif %${rb}${lb}% for message in messages %${rb}${lb}% if message['role'] == 'user' %${rb}<${pipe}User${pipe}>${lb}${lb} message['content'] ${rb}${rb}${lb}% elif message['role'] == 'assistant' %${rb}<${pipe}Assistant${pipe}>${lb}${lb} message['content'] ${rb}${rb}<${pipe}end of sentence${pipe}>${lb}% endif %${rb}${lb}% endfor %${rb}${lb}% if add_generation_prompt %${rb}<${pipe}Assistant${pipe}><think>${lb}% endif %${rb}
+```
+
+### 3. KubeRay Worker Config ( Defined by raySpec)
 
 Optimized for CoreWeave H100 instances with RDMA support.
 
@@ -199,33 +279,7 @@ Optimized for CoreWeave H100 instances with RDMA support.
             - key: "nvidia.com/gpu"
               operator: "Exists"
               effect: "NoSchedule"
-
 ```
-
----
-
-## ⚙️ Provisioning Highlights
-
-* ✅ **One-Click Deployment**: 100% automated vLLM stack with zero manual intervention
-
-
-* ✅ **Zero Dependencies**: No pre-existing cluster/kubeconfig required - built from scratch with just a user token
-
-* ✅ **Full Add-on Suite**: Traefik, cert-manager, metrics-server, Let's Encrypt Issuers, Prometheus, and Grafana included
-
-* ✅ **Smart GPU Mapping**: Friendly names (H100, B200) → actual CoreWeave instance IDs with AZ validation (fails fast if unsupported)
-
-* ✅ **Production SSL**: Auto-provisioned HTTPS for vLLM & Grafana via
-  ```
-  https://<vllm_prefix>.<org_id>-<cluster_name>.coreweave.app
-  ```
-
-* 🏁🛑 **Race Condition Guards**:
-
-| Guard Type | Purpose | Behavior |
-|------------|---------|----------|
-| **NodePool State Polling** | Ensures nodes are Ready | Waits for node Ready status before deploying workloads |
-| **DNS Readiness Guard** | Verifies API server DNS propagation | Polls Cloudflare DNS for K8s API server resolution before proceeding |
 
 ---
 ## 🔄 Deployment Workflow
@@ -240,6 +294,12 @@ Optimized for CoreWeave H100 instances with RDMA support.
 | **6. Network Setup** | (included) | NCCL/RDMA | (Ray) Inter-node DualPipe communication |
 | **7. API Ready** | < 1s | OpenAI endpoint | DeepSeek-V3.2 chat template loaded with reasoning content|
 | **Total** | **~59 min** | | Cold start → first inference |
+
+## 🏗️ Infrastructure Stack
+
+<details>
+<summary><b>Expand for full infrastructure details (VPC, CKS, Add-ons, vLLM)</b></summary>
+
 
 ### 1. 📶 Networking (template)
 | Feature | Configuration |
@@ -256,7 +316,7 @@ Optimized for CoreWeave H100 instances with RDMA support.
 - Control plane v1.35 with two managed node-group types (CPU and GPU)
 - Storage:	VAST Data Storage is a High-throughput storage for massive model weights (shared-vast)
 
-### 3. 📦 Add-ons
+### 3. 📦 Cluster Add-ons
 
 Core CKS add-ons are pre-optimized for AI workloads. We added below K8s addons to enable this build
 | Category | Add-on | Notes |
@@ -276,8 +336,6 @@ Core CKS add-ons are pre-optimized for AI workloads. We added below K8s addons t
 | **Deepseek Helm Chart** | [`deepseek.tpl`](./config/llm-stack/helm/gpu/gpu-deepseek-v32.tpl). |
 | **Observability** | **2x vLLM Dashboards**: Pre-configured Grafana views for KV Cache and Inference Performance. |
 
----
-
 ## 🖥️Coreweave GPU Instance
 
 This build used 2xH100 nodes of 8GPUs each. View the full [CoreWeave GPU Catalog](https://www.coreweave.com/gpu-cloud-pricing).
@@ -296,7 +354,11 @@ This build used 2xH100 nodes of 8GPUs each. View the full [CoreWeave GPU Catalog
 *\*Estimated entry price for reserved capacity.*
 </details>
 
----
+**Note:** This infrastructure is identical to the [base vllm-cks stack](https://github.com/CloudThrill/vllm-production-stack-terraform/tree/main/coreweave/cks-vllm). The DeepSeek-specific components are documented in [DeepSeek Setup](#%EF%B8%8F-deepseek-setup).
+
+
+</details>
+ ---
 
 ## 🛠️ Configuration Knobs
 
@@ -469,7 +531,7 @@ No modules.
 ### 1. Clone the Repository
 ```bash
 git clone https://github.com/CloudThrill/vllm-production-stack-terraform
-cd vllm-production-stack-terraform/coreweave/cks-vllm
+cd vllm-production-stack-terraform/coreweave/cks-deepseek3
 
 ```
 
@@ -528,11 +590,12 @@ terraform apply
 ## 🧪 Quick Test
 
 ### Terraform apply output
-- Example with `vllm_host_prefix="vllm"` and `cluster_name=vllm-cw-prod`
+Example with `vllm_host_prefix="vllm"` and `cluster_name=vllm-cw-prod`
 
-    ```bash
+<details>
+  <summary><b>Expand for full output💬</b> </summary> 
+  
     Apply complete! Resources: 19 added, 0 changed, 0 destroyed.
-
     Outputs:
 
     vllm_stack_summary = <<EOT
@@ -563,7 +626,7 @@ terraform apply
       -----------------------------------------------------------
       1. Set Context   : export KUBECONFIG="./kubeconfig"
       2. Test Model    : curl -k "https://vllm.<myorg>-vllm-cw-prod.coreweave.app/v1/models"
-    ```
+</details>
 
 **Set kubectl context:**
 ```bash
@@ -594,22 +657,17 @@ curl -k "${VLLM_API_URL}/models" | jq .
 {
   "object": "list",
   "data": [
-    {"id": "gpt-oss-120b", "object": "model", "created": 1739145600},
-    {"id": "gemma-3-27b-vision", "object": "model", "created": 1739145600},
-    {"id": "qwen3-next-80b", "object": "model", "created": 1739145600},
-    {"id": "trinity-mini", "object": "model", "created": 1739145600}
+    {"id": "deepseek-ai/DeepSeek-V3.2", "object": "model", "created": 1739145600}
   ]
 }
 ```
 
 ### 3. Test Text Completion
-
-**GPT-OSS-120B (Flagship Reasoning):**
 ```bash
 curl -k "${VLLM_API_URL}/completions" \
     -H "Content-Type: application/json" \
     -d '{
-        "model": "gpt-oss-120b",
+        "model": "deepseek-ai/DeepSeek-V3.2",
         "prompt": "Toronto is a",
         "max_tokens": 50,
         "temperature": 0.7
@@ -620,25 +678,11 @@ curl -k "${VLLM_API_URL}/completions" \
 //*
 ```
 
-**Trinity Mini (Agentic/Tool Calling):**
-```bash
-curl -k "${VLLM_API_URL}/chat/completions" \
-    -H "Content-Type: application/json" \
-    -d '{
-        "model": "trinity-mini",
-        "messages": [{"role": "user", "content": "Explain tensor parallelism in 2 sentences"}],
-        "max_tokens": 100,
-        "temperature": 0.7
-    }' | jq .choices[].message.content
-```
 ### 4. Browser WebUI (Optional)
 You can also use [Page Assist](https://chromewebstore.google.com/detail/page-assist-a-web-ui-for/jfgfiigpkhlkbnfnbobbkinehhfdhndo?hl=en) Chrome extension for a lightweight chat UI to test your **vLLM Endpoint**.
 <img width="3807" height="600" alt="coreweave_vllm-WUI" src="https://github.com/user-attachments/assets/4c04a0ed-cd89-43b1-b792-665ff28b5ade" />
-**Setup:** Settings → OpenAI Compatible API → Add provider → Base URL: ` https://vllm.<myorg>-vllm-cw-prod.coreweave.app/v1`
-
-
-
-<img width="3639" height="1678" alt="image" src="https://github.com/user-attachments/assets/3eeda894-23b3-4e16-a760-0494770d8372" />
+**Setup:** Settings → OpenAI Compatible API → Add provider → Base URL: ` https://vllm.<myorg>-vllm-cw-prod.coreweave.app/v1` 
+<img width="3398" height="1730" alt="image" src="https://github.com/user-attachments/assets/3c1abe15-d8f5-4747-8417-0cab5f31fd56" />
 
 ---
 
@@ -661,13 +705,15 @@ https://grafana.<myorg>-vllm-cw-prod.coreweave.app
 1. **vLLM Dashboard**
    - latency,TTFT, ITL, QPS information , Serving engine load(KV cache usage)
 <p align="center">
-  <img width="600" height="325" alt="coreweave_vllm-dashboard1 2" src="https://github.com/user-attachments/assets/01bc503b-e991-47f2-aac0-7a3f04d7c17a" />
+   <img width="3055" height="1138" alt="image" src="https://github.com/user-attachments/assets/2b1314f5-57fe-4a31-bdb9-270495380549" />
+
 </p>
 
 2. **vLLM Inference Observability**
    - GPU utilization per model / Throughput (tokens/sec) / Prefill vs decode metrics / [Prompt|output] length
 <p align="center">
-  <img width="950" height="535" alt="coreweave_vllm-dashboard2" src="https://github.com/user-attachments/assets/8e6806be-5d7e-4a8a-9278-161bb0b12d05" />
+ <img width="3176" height="1637" alt="image" src="https://github.com/user-attachments/assets/73a1f057-80a7-4caf-b963-fc30fa4d3af6" />
+
 </p>
 
 
@@ -708,6 +754,7 @@ terraform import 'kubectl_manifest.vllm_service_monitor["vllm_monitor"]' "monito
 terraform import 'kubernetes_config_map.vllm_dashboard["vllm_dashboard"]' kube-prometheus-stack/vllm-dashboard
 terraform import 'kubernetes_config_map.vllm_dashboard["vllm_dashboard_oci"]' kube-prometheus-stack/vllm-dashboard-oci
 ```
+
 </details>
 
 ---
