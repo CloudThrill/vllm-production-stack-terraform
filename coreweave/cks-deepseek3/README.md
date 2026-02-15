@@ -290,11 +290,33 @@ Optimized for CoreWeave H100 instances with RDMA support.
 | **2. Weight Download** | 10m 22s | Hugging Face | 643GB FP8 weights → shared PVC |
 | **3. VRAM Load (Head)** | 33m 27s | Ray Head | Pipeline stage 1 → 8×H100 VRAM |
 | **4. VRAM Load (Worker)** | 34m 51s | Ray Worker | Pipeline stage 2 → 8×H100 VRAM |
-| **5. Kernel Init** | 13m 48s | DeepGEMM + FlashMLA | JIT-compile kernels; init MLA buffers |
+| **5. Warmup** | 13m 48s | DeepGEMM + FlashMLA | JIT-compile kernels; init MLA buffers |
 | **6. Network Setup** | (included) | NCCL/RDMA | (Ray) Inter-node DualPipe communication |
 | **7. API Ready** | < 1s | OpenAI endpoint | DeepSeek-V3.2 chat template loaded with reasoning content|
 | **Total** | **~59 min** | | Cold start → first inference |
 
+---
+
+### 💽 VRAM Distribution
+
+**DeepSeek-V3.2** achieves balanced sharding across 16 GPUs using TensorParallelism=8 + PipelineParallelism=2:
+
+| Metric | Head Node (PP Rank 0) | Worker Node (PP Rank 1) |
+|--------|----------------------|------------------------|
+| **Avg. Used VRAM** | **~62.7 GiB**/GPU | **~68.6 GiB**/GPU |
+| **Free for KV Cache** | **~18.8 GiB**/GPU | **~12.9 GiB**/GPU |
+| **Transformer Layers** | **30** Layers (1-30) | **31** layers (31-61) |
+| **Total Weights** | **~310 GB** (8 GPUs) | **~333 GB** (8 GPUs) |
+
+**Why Worker uses more VRAM:**
+
+Asymmetric layer split (31 vs 30) + final-stage MoE routing overhead + activation buffering from PP Rank 0.
+
+**KV Cache Capacity:**
+
+**12.9-18.8** GiB/GPU enables **~20×** concurrent **16k-token** requests via Multi-head Latent Attention (MLA) compression.
+
+---
 ## 🏗️ Infrastructure Stack
 
 <details>
@@ -332,7 +354,7 @@ Core CKS add-ons are pre-optimized for AI workloads. We added below K8s addons t
 | **Model Serving** | (Default) Single GPT-OSS-20B model replica. |
 | **Load Balancing** | Round-robin request router service. |
 | **Hugging Face Token** | Securely stored as a Kubernetes Secret. |
-| **LLM Storage** | Init container for persistent model caching under `/data/models/` using VAST Data. |
+| **LLM Storage** |  Persistent model caching under `/data/models/` using VAST Data. |
 | **Deepseek Helm Chart** | [`deepseek.tpl`](./config/llm-stack/helm/gpu/gpu-deepseek-v32.tpl). |
 | **Observability** | **2x vLLM Dashboards**: Pre-configured Grafana views for KV Cache and Inference Performance. |
 
@@ -696,8 +718,7 @@ terraform output vllm_stack_summary | grep "GRAFANA"
 https://grafana.<myorg>-vllm-cw-prod.coreweave.app
 ```
 **Login Credentials:**
-- **User**: `admin`
-- **Password**: Fetch using: `var.grafana_admin_password`
+- **User**: `admin`   | - **Password**: Fetch using: `var.grafana_admin_password`
 
 
 ### Pre-configured Dashboards
@@ -755,6 +776,37 @@ terraform import 'kubernetes_config_map.vllm_dashboard["vllm_dashboard"]' kube-p
 terraform import 'kubernetes_config_map.vllm_dashboard["vllm_dashboard_oci"]' kube-prometheus-stack/vllm-dashboard-oci
 ```
 
+</details>
+
+**3. Check Ray multi-node logs**
+
+Ray stores detailed logs for each component in `/tmp/ray/session_latest/logs/`:
+
+| Log File | Purpose | Key Information |
+|----------|---------|-----------------|
+| `worker-*.out` | Application logs | vLLM startup, weight loading, errors |
+| `raylet.out` | System logs | Cluster connectivity, resource scheduling |
+| `python-core-worker.log` | C++ core logs | Low-level crashes, memory mapping errors |
+| `dashboard_agent.log` | Monitoring | Node stats reporting to Head dashboard |
+
+**Check logs:**
+<img width="3786" height="565" alt="image" src="https://github.com/user-attachments/assets/ef00cb28-631e-4772-8687-83030c7e90af" />
+<img width="3741" height="339" alt="image" src="https://github.com/user-attachments/assets/35854eca-c1ff-4430-bd90-c6ba7ee336b8" />
+
+```bash
+K9s: Navigate to the Worker pod under vllm Namespace> Shell login into the worker container
+# View worker logs (weight loading progress)
+more /tmp/ray/session_latest/logs/worker-*.out
+
+# Check cluster connectivity
+more /tmp/ray/session_latest/logs/raylet.out
+
+# Monitor real-time
+tail -f /tmp/ray/session_latest/logs/raylet.out
+```
+
+<details><summary><b>Note</b>(Monitoring progress)</summary>
+When you see <code>`100% Completed`</code> followed by <code>'RayWorkerWrapper PID'</code>, weights are loaded into CPU memory and now uploading to GPU VRAM. Check `worker-*.out` for VRAM allocation progress.
 </details>
 
 ---
