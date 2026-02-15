@@ -280,7 +280,56 @@ Optimized for CoreWeave H100 instances with RDMA support.
               operator: "Exists"
               effect: "NoSchedule"
 ```
+### 4. Vllm production stack helm install
+```hcl
+data "template_file" "vllm_values" {  
+    count = var.enable_vllm && var.enable_nodepool_gpu ? 1 : 0 
+  template = file( "${path.module}/${var.gpu_vllm_helm_config}" )  # Concatenate path.module and the variable
+  vars = {  
+      org_id        = var.org_id
+      cluster_name  = var.cluster_name # "vllm-gpu-cluster"
+      issuer_name   = var.use_letsencrypt_staging ? "letsencrypt-staging" : "letsencrypt-prod"
+      storage_class = "shared-vast"
+      prefix       = var.vllm_host_prefix # "vllm-api"
+      # NEW: Escape variables for the Jinja2 template
+      lb = "{"
+      rb = "}"
+      pipe = "｜" # This is the specific DeepSeek full-width pipe. Full-width Pipe (｜, U+FF5C), tokenizer recognizes it as part of a Special Token ID
+  }  
+}
 
+
+# Helm release  
+resource "helm_release" "vllm_stack" {  
+  count = var.enable_vllm && var.enable_nodepool_gpu ? 1 : 0  
+    
+  name             = "vllm-gpu-stack"  
+  repository       = "https://vllm-project.github.io/production-stack"  
+  chart            = "vllm-stack"  
+  namespace        = "${var.vllm_namespace}"  
+  create_namespace = false
+  
+  values = [data.template_file.vllm_values[0].rendered]  
+  timeout = 1260  # Wait up to 20 minutes for the release to be ready
+  
+  # Add cleanup settings  
+  cleanup_on_fail = true  
+  force_update    = true  
+  recreate_pods   = true
+  wait            = true
+  wait_for_jobs   = true
+  
+  depends_on = [
+    kubectl_manifest.hf_token,           # optional 
+    helm_release.traefik,                 # Ensure Traefik is ready
+    kubectl_manifest.letsencrypt_issuer, # Ensure Let's Encrypt issuer is ready
+    kubectl_manifest.nodepool_gpu,           
+   terraform_data.wait_for_gpu_nodes     # Ensure GPU nodes are ready
+  , helm_release.kuberay_operator  # ← ADD THIS
+  ]
+
+}
+```
 ---
 ## 🔄 Deployment Workflow
 
