@@ -1,5 +1,5 @@
 # vllm-production-stack-terraform
-Multi-cloud Terraform deployment framework for the vLLM Production Stack — with implementations for AWS (EKS), Azure (AKS), GCP (GKE), Nebius, and Oracle OKE.
+Multi-cloud Terraform deployment framework for the vLLM Production Stack — with implementations for AWS (EKS), Azure (AKS), GCP (GKE), Nebius, CoreWeave, and Oracle OKE.
 
 **1. AWS EKS**
   
