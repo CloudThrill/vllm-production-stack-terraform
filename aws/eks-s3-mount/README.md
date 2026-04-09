@@ -1,5 +1,7 @@
 # 🧑🏼‍🚀 vLLM Production Stack on Amazon EKS - S3 Mountpoint 
 
+<img width="1536" height="1024" alt="vllm_prod-stack-eks-s3" src="https://github.com/user-attachments/assets/ab2fa28a-2ac3-4c01-ac19-a2225ceda960" />
+
 A production-grade Terraform deployment for serving Large Language Models using [vLLM](https://github.com/vllm-project/vllm) on Amazon EKS. 
 
 This infrastructure completely decouples model storage from compute using the **AWS Mountpoint for Amazon S3 CSI Driver**, and introduces advanced Kubernetes scheduling techniques to bypass strict GPU locking, allowing multiple engine replicas to share a single cloud GPU efficiently.
