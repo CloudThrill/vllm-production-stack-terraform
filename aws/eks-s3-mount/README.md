@@ -1,9 +1,53 @@
-# 🧑🏼‍🚀 vLLM Production Stack on Amazon EKS - S3 Mountpoint (With terraform)
+# 🧑🏼‍🚀 vLLM Production Stack on Amazon EKS - S3 Mountpoint
 
 A production-grade Terraform deployment for serving Large Language Models using [vLLM](https://github.com/vllm-project/vllm) on Amazon EKS. 
 
 This infrastructure completely decouples model storage from compute using the **AWS Mountpoint for Amazon S3 CSI Driver**, and introduces advanced Kubernetes scheduling techniques to bypass strict GPU locking, allowing multiple engine replicas to share a single cloud GPU efficiently.
 
+## ✨ Architectural Highlights
+
+### 1. The Storage Model: Streams, Not Syncs
+Tools like Google Drive or Dropbox run background daemons that physically download copies of cloud files to a local hard drive. **The AWS Mountpoint CSI Driver does not do this.** * It acts as an API translator. When the pod tries to read `model.safetensors`, Mountpoint streams the bytes directly from S3 into the GPU's VRAM over the network. 
+* The file is never permanently written to your node's underlying EBS volume, keeping your compute nodes completely stateless.
+
+### 2. The "subPath" Jail
+We use a specific `prefix` mount combined with `subPath: ${s3_tiny_model}`. 
+* **The Benefit:** Your vLLM pod is completely blind to the rest of the S3 bucket. If someone accidentally uploads 500GB of garbage data to another folder in the bucket, your pod physically cannot see it. 
+* **OOM Protection:** It prevents the "Poisoned Folder" scenario where vLLM tries to map an entire bucket of unstructured files into a 24GB GPU, resulting in violent Out-Of-Memory crashes.
+
+### 3. The "GPU Lie" & VRAM Policing
+Standard Kubernetes scheduling (`nvidia.com/gpu: 1`) enforces an exclusive lock, wasting massive amounts of hardware for smaller models.
+* **The Bypass:** We omit the hardware request, essentially lying to the Kubernetes Device Plugin.
+* **The Sheriff:** Because Kubernetes isn't managing the VRAM, vLLM takes over. By injecting `--gpu-memory-utilization=0.48`, the pods manage their own internal fences on the shared hardware.
+* **CUDA Graphs:** Enabled by default. The GPU processes tokens faster because it doesn't have to launch individual kernels for every token pass.
+
+---
+
+## 🧮 Hardware & VRAM Profiling (NVIDIA L4 / g6.2xlarge)
+This configuration is tuned to safely stack **two** model instances on a single 24GB GPU:
+* **Total Usable VRAM:** ~22.35 GiB
+* **Partition per Pod:** `0.48` (~10.7 GiB)
+* **Model Size (fp16):** ~2.05 GiB
+* **KV Cache & Compilation Headroom:** ~8.6 GiB
+
+---
+
+## ⏱️ The Boot Bottleneck & Router Fix
+
+Decoupling storage comes with a massive initialization penalty. Below is the VRAM profiling telemetry for booting a TinyLlama container via the S3 CSI Mountpoint:
+
+| Stage | Duration | Description |
+| :--- | :--- | :--- |
+| **API Init** | 6s | Python environment and API server startup. |
+| **Engine Init** | 14s | CUDA platform detection and V1 Engine config. |
+| **Model Load** | **189s** | **The S3 Bottleneck.** Pulling 2GB of weights via CSI over the network. |
+| **Weight Map** | 1s | Mapping loaded weights into VRAM. |
+| **Graph Compile** | 19s | `torch.compile` and CUDA graph capture memory spiking. |
+| **Total Boot** | **~3.9 min** | Total time until Uvicorn Port 8000 is ready to serve traffic. |
+
+### Defeating the "Death Loop"
+The upstream `lmstack-router` Helm chart has a rigidly hardcoded `livenessProbe` set to 30 seconds, and completely omits `startupProbe` templating. 
+Because our S3 engine takes **3.9 minutes** to boot, Kubernetes continuously executes the router pod for failing health checks before the backend is even awake. This stack resolves this by injecting a custom JSON patch/template override with an `initialDelaySeconds: 150`, granting the system the patience required to compile the graphs.
 ## 🏗️ Core Infrastructure Components
 
 This deployment relies on several heavily customized Terraform resources and Helm template overrides to achieve its performance and cost-efficiency.
@@ -38,18 +82,24 @@ This configuration is tuned to safely stack **two** model instances on a single 
 * **Model Size (fp16):** ~2.05 GiB
 * **KV Cache & Compilation Headroom:** ~8.6 GiB
 
-| Pillar                  | Start    | End      | Duration    |
+---
+
+## 🏗️ Terraform Provisioning Flow
+
+This deployment utilizes a "phantom dependency" chain (checking S3, seeding if missing, then rendering the Helm template) to ensure race conditions never occur. From a cold start, the entire infrastructure stack provisions in **~24 minutes**:
+
+| Stage                 | Start    | End      | Duration    |
 | ----------------------- | -------- | -------- | ----------- |
-| **IAM & S3**            | 03:23:02 | 03:23:17 | ~15s        |
-| **VPC**                 | 03:23:02 | 03:25:16 | ~2m 14s     |
-| **EKS Control Plane**   | 03:25:16 | 03:31:21 | ~6m 5s      |
-| **Node Groups**         | 03:32:04 | 03:33:53 | ~1m 49s     |
-| **Add-ons (Core)**      | 03:33:53 | 03:35:53 | ~2m         |
-| **Add-ons (Helm)**      | 03:35:53 | 03:38:39 | ~2m 46s     |
-| **S3 CSI Driver**       | 03:38:39 | 03:38:47 | ~8s         |
+| **IAM & S3** | 03:23:02 | 03:23:17 | ~15s        |
+| **VPC** | 03:23:02 | 03:25:16 | ~2m 14s     |
+| **EKS Control Plane** | 03:25:16 | 03:31:21 | ~6m 5s      |
+| **Node Groups** | 03:32:04 | 03:33:53 | ~1m 49s     |
+| **Add-ons (Core)** | 03:33:53 | 03:35:53 | ~2m         |
+| **Add-ons (Helm)** | 03:35:53 | 03:38:39 | ~2m 46s     |
+| **S3 CSI Driver** | 03:38:39 | 03:38:47 | ~8s         |
 | **Calico + GPU Plugin** | 03:38:47 | 03:39:15 | ~28s        |
-| **vLLM Stack**          | 03:39:15 | 03:47:29 | **~8m 14s** |
-| **Total deployment Time** | 03:23:02 | 03:47:29 | **~24 minutes** |
+| **vLLM Stack** | 03:39:15 | 03:47:29 | **~8m 14s** |
+| **Total Deployment Time** | 03:23:02 | 03:47:29 | **~24 minutes** |
 
 ---
 
@@ -146,5 +196,36 @@ Wait 3-5 minutes for the engines to compile their graphs and the router to repor
 curl -k "http://<YOUR_ALB_URL>/v1/models"
 ```
 
-Built with ❤️ by [@Cloudthrill](https://github.com/CloudThrill)
+### 2. Connect & Observe
+```bash
+export KUBECONFIG="./kubeconfig"
+
+# Watch the engines boot and compile (Expect ~4 minutes)
+stern tinyllama-gpu -n vllm --tail 100 --no-follow --include 'POST|Engine' --exclude 'launcher|200 OK|health|metrics' --color always
 ```
+
+### 3. Test Load Balancing
+Once the router reports healthy, you can run this test script to verify that traffic is actively splitting across your squeezed GPU replicas.
+
+```bash
+# Forward the router port locally
+kubectl -n vllm port-forward svc/vllm-gpu-router-service 30080:80 &
+export vllm_api_url=http://localhost:30080/v1
+
+# Send a barrage of prompts to test the round-robin distribution
+prompts=("The capital of France is" "Why is the sky blue?" "Write a poem about GPUs" "Explain Kubernetes" "Toronto is famous for" "Artificial Intelligence is")
+
+for i in {0..5}; do
+  echo -n "Request $((i+1)) [Prompt: ${prompts[$i]}] -> "
+  curl -s $vllm_api_url/completions \
+    -H "Content-Type: application/json" \
+    -d "{
+      \"model\": \"/models/tiny-llama\",
+      \"prompt\": \"${prompts[$i]}\",
+      \"max_tokens\": 10
+    }" | jq -r '.choices[].text' | tr -d '\n'
+  echo ""
+done
+```
+
+Built with ❤️ by [@Cloudthrill](https://github.com/CloudThrill)
