@@ -45,15 +45,15 @@
 ├── env-vars.template
 ├── terraform.tfvars.template
 ├── modules/
-│   ├── aws-networking/
-│   │   └── aws-vpc/
-│   ├── aws-eks/
-│   ├── eks-blueprints-addons/
-|   ├── eks-data-addons|
-│   └── llm-stack
-|       ├── helm|
-|           ├── cpu|
-|           └── gpu|
+│   ├── aws-networking/   # remote module
+│   │   └── aws-vpc/      # remote module
+│   ├── aws-eks/           # remote module
+│   ├── eks-blueprints-addons/     # remote module
+|   ├── eks-data-addons|           # remote module
+│   └── llm-stack                  
+|       ├── helm|                  
+|           ├── cpu|               
+|           └── gpu|               
 ├── config/
 │   ├── calico-values.tpl
 │   └── kubeconfig.tpl
