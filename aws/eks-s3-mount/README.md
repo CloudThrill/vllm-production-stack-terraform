@@ -28,6 +28,8 @@
   - [3. Test Load Balancing](#3-test-load-balancing)
 
 ---
+>[!Note]
+> This deployment is an extension of our foundational [Vllm-EKS stack](https://cloudthrill.ca/vllm-production-stack-on-eks-terraform), leveraging [AWS integration and automation](https://github.com/aws-ia) modules. The only difference is the S3 mount integration for model storage.
 
 ## 📂 Project Structure
 
@@ -61,6 +63,31 @@
 └── README.md                          # ← you are here
 
 ```
+
+## ⚙️ Provisioning Highlights
+Loading massive weight files into to EBS volumes per each replica limits horizontal scaling and inflates costs. We bypass this entirely:
+
+> 💡 **Note:** If you are looking for standard EBS-based model storage, use the [`eks-base`](../eks-base) stack instead.
+
+* ✅ **Streams, Not Syncs** (`cluster-tools.tf`)<br>
+  The AWS Mountpoint CSI Driver streams `model.safetensors` directly from S3 into GPU VRAM, keeping compute nodes 100% stateless.
+
+* ✅ **S3 "subPath" Containment** (`storage.tf`)<br>
+  Mounts a strict S3 prefix per model (e.g., `subPath: $${s3_my_model}`) to guarantee bucket isolation and prevent Out-Of-Memory crashes from "Poisoned Folders."
+
+* ✅ **Multi-Pod GPU Scaling** (`gpu-tinyllama-light-ingress-s3.tpl`)<br>
+  Bypasses the K8s hardware lock (by omitting `requestGPU: 1`) and injects `--gpu-memory-utilization=0.40` so multiple pod replicas can safely share a single physical GPU.
+
+* 🏁🛑 **Race Condition Guards**
+
+| Guard Type | Purpose | Behavior |
+|------------|---------|----------|
+| **Phantom Dependency** | Prevents premature Helm deployment | Forces the Terraform Helm release to wait until the `local-exec` S3 model bootstrap is 100% complete |
+| **`bootstrap_model_to_s3`** | Guarantees Model Weight Availability | Checks the S3 prefix. If empty, automatically downloads the HuggingFace model and syncs it to S3, If prefix and weights exist do nothing.|
+
+
+> 💡 **Note:** If you are looking for standard EBS-based model storage, use the [`eks-base`](../eks-base) stack instead.
+---
 ## ✅ Prerequisites
 
 | Tool | Version | Notes |
@@ -101,33 +128,64 @@ pipx install huggingface-hub
 aws configure --profile myprofile
 export AWS_PROFILE=myprofile        # ← If null Terraform exec auth will use the default profile
 ```
-## ⚙️ Provisioning Highlights
-
-### 1. The Storage Model: Streams, Not Syncs
-The AWS Mountpoint CSI Driver acts as an API translator. When the pod reads `model.safetensors`, Mountpoint streams bytes directly from S3 into the GPU's VRAM over the network. Your compute nodes remain completely stateless.
-
-### 2. The S3 "subPath" containement 
-We use a specific `prefix` S3 mount per model for all pods to use combined with .i.e `subPath: $${s3_my_model}`. 
-* **Isolation:** Mounting an `S3 prefix` makes the pod blind to the rest of the bucket. No risk of caching outside folders. 
-* **OOM Protection:** Prevents the "Poisoned Folder" scenario where vLLM tries to map an entire bucket into the GPU (Out-Of-Memory crash).
-
-### 3. Multi-Pod per GPU Setup
-To skip the exclusive GPU lock and test **multi-pod scaling** on a single physical GPU node with a shared S3 mount, we did the following. 
-* **The Bypass:** in the vllm chart, We omit the hardware request `requestGPU: 1`, essentially lying to the Kubernetes Device Plugin.
-* **Shared VRAM:** vLLM takes over VRAM management. By injecting `--gpu-memory-utilization=0.48`, the pods manage their own VMemory.
-
----
 
 ## 🏗️ Core Infrastructure Components
+The deployment provisions the required infrastructure based on your hardware selection. **IMPORTANT:** S3 deployment is only supporting the gpu mode.
 
-This deployment is an extension of our foundational [Vllm-EKS stack](https://cloudthrill.ca/vllm-production-stack-on-eks-terraform), embedding operational best practices from [AWS integration and automation](https://github.com/aws-ia). The below describes what was added to the code base to allow S3 mounts in the stack.
-> 💡 **Note:** If you are looking for standard EBS-based model storage, use the [`eks-base`](../eks-base) stack instead.
+| Phase | Component | Action | Condition |
+|-------|-----------|--------|-----------|
+| **1. Infrastructure** | VPC | Provision VPC with 3 public + 3 private subnets | Always |
+| | EKS | Deploy v1.30 cluster + CPU node group (t3a.large) | Always |
+| | CNI | Remove aws-node, install Calico overlay (VXLAN) | Always |
+| | Add-ons | Deploy EBS CSI, ALB controller, kube-prometheus | Always |
+| **2. vLLM Stack** | | | `enable_vllm = true` |
+| | HF secret| Deploy Create `hf-token-secret` for Hugging Face | `enable_vllm = true` |
+| | CPU Deployment | Deploy vLLM on existing CPU nodes | `inference_hardware = "cpu"` |
+| | GPU Infrastructure | Provision GPU node group (g5.xlarge) | `inference_hardware = "gpu"` |
+| | GPU Operator | Deploy NVIDIA operator/plugin | `inference_hardware = "gpu"` |
+| | GPU Deployment | Deploy vLLM on GPU nodes with scheduling | `inference_hardware = "gpu"` |
+| | Application | Deploy TinyLlama-1.1B Helm chart to `vllm` namespace | `enable_vllm = true` |
+| **3. Networking** | Load Balancer | Configure ALB and ingress for external access | `enable_vllm = true` |
+| **4. model storage** | PVC mounted from S3 | Crate S3 Bucket+ load from HF + install S3 CSI Driver + create PV/PVC | -> `/models/<model>` |
 
 
-### 1. Storage & IAM (`storage.tf`)
-Loading massive weight files into to EBS volumes per each replica limits horizontal scaling and inflates costs. We bypass this entirely:
+
+
+
+### 2. EKS Storage Add-ons (`cluster-tools.tf`)
+Manages the critical cluster-level utilities required for a production API:
+
+
+ 
+---
+## 🏗️ Terraform Provisioning Flow
+This deployment utilizes a "phantom dependency" chain (checking S3, seeding if missing, then rendering the Helm template) to ensure race conditions never occur. From a cold start, the entire infrastructure stack provisions in **~24 minutes**:
+
+| Stage                 | Start    | End      | Duration    |
+| ----------------------- | -------- | -------- | ----------- |
+| **IAM & S3** | 03:23:02 | 03:23:17 | ~15s        |
+| **VPC** | 03:23:02 | 03:25:16 | ~2m 14s     |
+| **EKS Control Plane** | 03:25:16 | 03:31:21 | ~6m 5s      |
+| **Node Groups** | 03:32:04 | 03:33:53 | ~1m 49s     |
+| **Add-ons (Core)** | 03:33:53 | 03:35:53 | ~2m         |
+| **Add-ons (Helm)** | 03:35:53 | 03:38:39 | ~2m 46s     |
+| **S3 CSI Driver** | 03:38:39 | 03:38:47 | ~8s         |
+| **Calico + GPU Plugin** | 03:38:47 | 03:39:15 | ~28s        |
+| **vLLM Stack(1Router+ 2Engines+ S3 model load+ Ovservability)** | 03:39:15 | 03:47:29 | **~8m 14s** |
+| **Total Deployment Time** | 03:23:02 | 03:47:29 | **~24 minutes** |
+
+---
+## 🔍 S3 Mountpoint & GPU  Walkthrough
+
+This build uses a highly specific Terraform sequence to orchestrate the S3 streaming and VRAM partitioning. 
+
+>[!note]
+> **AWS Mountpoint** is strictly an API translator. It intercepts pod filesystem reads (like `ls` or `cat`) and translates them into native `s3:ListObjectsV2` and `s3:GetObject` API calls.
+
+### 1. The Automated S3 Bootstrap (Execution Barrier)
+Before Helm deploys the vLLM pods, this `local-exec` block checks S3. If the model weights are missing, it downloads them locally via the `huggingface-cli` and syncs them to the bucket, acting as a deployment gate.
 * **S3 Bucket Provisioning:** Creates a dedicated bucket for model weights. (terraform resource)
-* **IRSA (IAM Roles for Service Accounts):** gives vLLM engine pods permission to securely read from S3 without hardcoded credentials.
+
 <details>
 <summary><b>View the Automated S3 Bootstrapping Code (Terraform)</b></summary>
 
@@ -196,54 +254,306 @@ resource "terraform_data" "bootstrap_model_to_s3" {
 ```
 </details>
 
-### 2. EKS Storage Add-ons (`cluster-tools.tf`)
-Manages the critical cluster-level utilities required for a production API:
-* **S3 Mountpoint CSI Driver:** Deployed through helm, to allow to mount the S3 bucket locally and stream weights into GPU.
 
-### 3. The 2-In-one vLLM "Squeeze" (`vllm-deploy.yaml.tpl`)
- For 2 small replicas(i.e TinyLlama 1B/3B) to share a 24GB NVIDIA L4, The template implements:
-* **The Hardware Bypass:** removes `requestGPU: 1` to prevent the Kubernetes scheduler from fencing off the hardware from other vllm replicas.
-* **The Magnet (Node Affinity):** Uses `nodeSelectorTerms` and `tolerations` to force the engines specifically onto the `g6.2xlarge` GPU node group.
-* **VRAM Partitioning:** Injects `--gpu-memory-utilization=0.40` into the engine arguments. To provide 10.7 GiB of VRAM per pod   
+### 2. S3 Mountpoint CSI Driver (Helm)
+Deployed through helm, to allow to mount the S3 bucket locally and stream weights into GPU. It is deployed in `kube-system` namespace, allowing standard Kubernetes PV to target S3 buckets.
 
+```hcl
+# cluster-tools.tf snippet
+resource "helm_release" "aws_mountpoint_s3_csi_driver" {
+  name       = "aws-mountpoint-s3-csi-driver"
+  repository = "[https://aws.github.io/eks-charts](https://aws.github.io/eks-charts)"
+  chart      = "aws-mountpoint-s3-csi-driver"
+  namespace  = "kube-system"
+  version    = "1.2.0" 
+
+  set {
+    name  = "node.tolerateAllTaints"
+    value = "true"
+  }
+}
+```
+
+### 3. IAM & Storage Containment (IRSA + PV/PVC)
+We use IAM Roles for Service Accounts (IRSA) to grant the S3 CSI driver (pods) least-privilege access, and provision a massive `1200Ti` Persistent Volume (since S3 is effectively infinite).
+
+<details>
+<summary><b>View the S3 storage deployment Code (Terraform)</b></summary>
+
+  ```hcl
+  # storage.tf snippet
+  
+  resource "aws_s3_bucket" "vllm_models" {
+    count  = var.enable_s3_model_storage && var.create_s3_bucket ? 1 : 0
+    bucket = var.s3_bucket
+    force_destroy = true
+    tags = merge(
+      var.tags,
+      {
+        Name    = var.s3_bucket
+        Purpose = "vLLM model storage"
+      }
+    )
+  
+    # lifecycle {
+    #   prevent_destroy = true # Prevent accidental deletion of model bucket
+    # }
+  }
+  
+  resource "aws_s3_bucket_server_side_encryption_configuration" "vllm_models" {
+    count  = var.enable_s3_model_storage && var.create_s3_bucket ? 1 : 0
+    bucket = aws_s3_bucket.vllm_models[0].id
+  
+    rule {
+      apply_server_side_encryption_by_default {
+        sse_algorithm = "AES256"
+      }
+    }
+  }
+  
+  resource "aws_s3_bucket_public_access_block" "vllm_models" {
+    count  = var.enable_s3_model_storage && var.create_s3_bucket ? 1 : 0
+    bucket = aws_s3_bucket.vllm_models[0].id
+  
+    block_public_acls       = true
+    block_public_policy     = true
+    ignore_public_acls      = true
+    restrict_public_buckets = true
+  }
+  
+  #--------------------------------------------------------------
+  # IAM for Mountpoint S3 CSI driver
+  # Assumes cluster-tools.tf will create/annotate:
+  # kube-system / s3-csi-driver-sa
+  #--------------------------------------------------------------
+  
+  data "aws_iam_policy_document" "s3_csi_driver_assume_role" {
+    count = var.enable_s3_csi_driver ? 1 : 0
+  
+    statement {
+      effect  = "Allow"
+      actions = ["sts:AssumeRoleWithWebIdentity"]
+  
+      principals {
+        type        = "Federated"
+        identifiers = [module.eks.oidc_provider_arn]
+      }
+  
+      condition {
+        test     = "StringEquals"
+        variable = "${replace(module.eks.oidc_provider, "https://", "")}:sub"
+        values   = ["system:serviceaccount:kube-system:s3-csi-driver-sa"]
+      }
+  
+      condition {
+        test     = "StringEquals"
+        variable = "${replace(module.eks.oidc_provider, "https://", "")}:aud"
+        values   = ["sts.amazonaws.com"]
+      }
+    }
+  }
+  
+  resource "aws_iam_role" "s3_csi_driver" {
+    count              = var.enable_s3_csi_driver ? 1 : 0
+    name_prefix        = "${module.eks.cluster_name}-s3-csi-driver-"
+    assume_role_policy = data.aws_iam_policy_document.s3_csi_driver_assume_role[0].json
+  
+    tags = merge(
+      var.tags,
+      {
+        Name = "${module.eks.cluster_name}-s3-csi-driver"
+      }
+    )
+  }
+  
+  data "aws_iam_policy_document" "s3_csi_driver_readonly" {
+    count = var.enable_s3_csi_driver ? 1 : 0
+  
+    statement {
+      sid     = "ListBucket"
+      effect  = "Allow"
+      actions = ["s3:ListBucket"]
+      resources = [
+        "arn:aws:s3:::${local.s3_bucket_name}"
+      ]
+    }
+  
+    statement {
+      sid     = "ReadObjects"
+      effect  = "Allow"
+      actions = ["s3:GetObject"]
+      resources = [
+        "arn:aws:s3:::${local.s3_bucket_name}/*"
+      ]
+    }
+  }
+  
+  resource "aws_iam_policy" "s3_csi_driver_readonly" {
+    count       = var.enable_s3_csi_driver ? 1 : 0
+    name_prefix = "${module.eks.cluster_name}-s3-csi-read-"
+    description = "Read-only access for Mountpoint S3 CSI driver"
+    policy      = data.aws_iam_policy_document.s3_csi_driver_readonly[0].json
+  
+    tags = merge(
+      var.tags,
+      {
+        Name = "${module.eks.cluster_name}-s3-csi-readonly"
+      }
+    )
+  }
+  
+  resource "aws_iam_role_policy_attachment" "s3_csi_driver_readonly" {
+    count      = var.enable_s3_csi_driver ? 1 : 0
+    role       = aws_iam_role.s3_csi_driver[0].name
+    policy_arn = aws_iam_policy.s3_csi_driver_readonly[0].arn
+  }
+  
+  #--------------------------------------------------------------
+  # Static PV/PVC for Mountpoint S3 CSI
+  # Mount only the models/ prefix from the bucket
+  #--------------------------------------------------------------
+  
+  resource "kubernetes_persistent_volume" "s3_models" {
+    count = var.enable_vllm && var.enable_s3_model_storage ? 1 : 0
+  
+    metadata {
+      name = "vllm-s3-pv"
+      labels = {
+        storage = "s3-models"
+      }
+    }
+  
+    spec {
+      capacity = {
+        storage = "1200Gi" # ignored by the driver, still required by Kubernetes
+      }
+  
+      access_modes                     = ["ReadOnlyMany"]
+      persistent_volume_reclaim_policy = "Retain"
+      storage_class_name               = ""
+  
+      claim_ref {
+        namespace = kubernetes_namespace.vllm["vllm"].metadata[0].name
+        name      = "vllm-s3-claim"
+      }
+  
+      mount_options = [
+        "region ${var.region}",
+        "prefix ${local.model_s3_paths["tiny"]}/"
+      ]
+  
+      persistent_volume_source {
+        csi {
+          driver        = "s3.csi.aws.com"
+          volume_handle = "vllm-s3-${module.eks.cluster_name}"
+  
+          volume_attributes = {
+            bucketName = local.s3_bucket_name
+          }
+        }
+      }
+    }
+  
+    depends_on = [
+      aws_iam_role_policy_attachment.s3_csi_driver_readonly,
+      module.eks_addons,
+      terraform_data.bootstrap_model_to_s3
+    ]
+  }
+  
+  resource "kubernetes_persistent_volume_claim" "s3_models" {
+    count = var.enable_vllm && var.enable_s3_model_storage ? 1 : 0
+  
+    metadata {
+      name      = "vllm-s3-claim"
+      namespace = "vllm"
+      labels = {
+        app = "vllm"
+      }
+    }
+  
+    spec {
+      access_modes       = ["ReadOnlyMany"]
+      storage_class_name = ""
+      volume_name        = kubernetes_persistent_volume.s3_models[0].metadata[0].name
+  
+      resources {
+        requests = {
+          storage = "1200Gi" # ignored by the driver, still required by Kubernetes
+        }
+      }
+    }
+  
+    depends_on = [
+      kubernetes_persistent_volume.s3_models
+    ]
+  }
+
+```
+
+</details>
+
+
+## 4. The 2-In-1 vLLM "Squeeze" (`vllm-deploy.yaml.tpl`)
+To run 2 small replicas (like TinyLlama 1B/3B) on a single 24GB NVIDIA L4, we alter the standard Helm values. We remove the K8s hardware lock, force the pod onto the GPU node, and partition the VRAM.
+
+```yaml
+# vllm-deploy.yaml.tpl snippet
+  modelSpec:
+  - name: "tinyllama-gpu"
+    repository: "vllm/vllm-openai"
+    tag: "v0.8.5.post1"
+    modelURL: "/models/${s3_tiny_model}"
+    mountPvcStorage: false   # We will use extraVolumes to mount the S3 model directly, so we disable the default PVC storage
+    # 3.  Forces VLLM pods onto the GPU node when GPUrequest is removed, and allows multiple pods to share the GPU with the new --gpu-memory-utilization setting.)
+    nodeSelectorTerms:
+        - matchExpressions:
+          - key: workload-type
+            operator: "In"
+            values:
+            - "gpu"  
+    replicaCount: 2
+    requestCPU: 1
+    requestMemory: "2Gi"
+  # requestGPU: 1          # REMOVED: To allow multiple pods on one GPU
+    limitCPU: 2
+    limitMemory: "8Gi"
+    vllmConfig:
+      dtype:  "float16"  # Changed from "bfloat16" not supported by Tesla T4 GPU (compute capability 7.5) 
+      extraArgs:
+        - "--disable-log-requests" 
+        - "--gpu-memory-utilization=0.4"  # To SQUEEZE: 0.4 * 2 = 80% total L4 VRAM
+        - "--host"  # NEW: Explicitly set the host address
+        - "0.0.0.0" # NEW: Bind to all interfaces
+    env: []        # NEW: CPU env vars removed
+    # ---------------------------------------------------------
+    # CUSTOM MOUNT PATH
+    # mount the Persistent Volume directly to that path.
+    # ---------------------------------------------------------    
+    extraVolumes:
+      - name: s3-model-storage
+        persistentVolumeClaim:
+          claimName: vllm-s3-claim
+    extraVolumeMounts:
+      - name: s3-model-storage
+        # Mounts the S3 model directly into the /models/tiny-llama folder
+        mountPath: /models/${s3_tiny_model}
+        readOnly: true 
+
+...
+routerSpec:
+  enableRouter: true
+  routingLogic: "roundrobin"
+  startupProbe:
+    initialDelaySeconds: 150   # <----- keep routerpod alive until pods are spun up
+    periodSeconds: 10
+    failureThreshold: 30
+    httpGet:   
+      path: /health
+      port: 8000    
+```
 
 ---
-## 🏗️ Terraform Provisioning Flow
-The deployment automatically provisions only the required infrastructure based on your hardware selection. **IMPORTANT:** S3 deployment is only supporting the gpu mode.
-
-| Phase | Component | Action | Condition |
-|-------|-----------|--------|-----------|
-| **1. Infrastructure** | VPC | Provision VPC with 3 public + 3 private subnets | Always |
-| | EKS | Deploy v1.30 cluster + CPU node group (t3a.large) | Always |
-| | CNI | Remove aws-node, install Calico overlay (VXLAN) | Always |
-| | Add-ons | Deploy EBS CSI, ALB controller, kube-prometheus | Always |
-| **2. vLLM Stack** | | | `enable_vllm = true` |
-| | HF secret| Deploy Create `hf-token-secret` for Hugging Face | `enable_vllm = true` |
-| | CPU Deployment | Deploy vLLM on existing CPU nodes | `inference_hardware = "cpu"` |
-| | GPU Infrastructure | Provision GPU node group (g5.xlarge) | `inference_hardware = "gpu"` |
-| | GPU Operator | Deploy NVIDIA operator/plugin | `inference_hardware = "gpu"` |
-| | GPU Deployment | Deploy vLLM on GPU nodes with scheduling | `inference_hardware = "gpu"` |
-| | Application | Deploy TinyLlama-1.1B Helm chart to `vllm` namespace | `enable_vllm = true` |
-| **3. Networking** | Load Balancer | Configure ALB and ingress for external access | `enable_vllm = true` |
-| **4. model storage** | PVC mounted from S3 | Crate S3 Bucket+ load from HF + install S3 CSI Driver + create PV/PVC | -> `/models/<model>` |
-
-This deployment utilizes a "phantom dependency" chain (checking S3, seeding if missing, then rendering the Helm template) to ensure race conditions never occur. From a cold start, the entire infrastructure stack provisions in **~24 minutes**:
-
-| Stage                 | Start    | End      | Duration    |
-| ----------------------- | -------- | -------- | ----------- |
-| **IAM & S3** | 03:23:02 | 03:23:17 | ~15s        |
-| **VPC** | 03:23:02 | 03:25:16 | ~2m 14s     |
-| **EKS Control Plane** | 03:25:16 | 03:31:21 | ~6m 5s      |
-| **Node Groups** | 03:32:04 | 03:33:53 | ~1m 49s     |
-| **Add-ons (Core)** | 03:33:53 | 03:35:53 | ~2m         |
-| **Add-ons (Helm)** | 03:35:53 | 03:38:39 | ~2m 46s     |
-| **S3 CSI Driver** | 03:38:39 | 03:38:47 | ~8s         |
-| **Calico + GPU Plugin** | 03:38:47 | 03:39:15 | ~28s        |
-| **vLLM Stack(1Router+ 2Engines+ S3 model load+ Ovservability)** | 03:39:15 | 03:47:29 | **~8m 14s** |
-| **Total Deployment Time** | 03:23:02 | 03:47:29 | **~24 minutes** |
-
----
-
 ## 🚀 Quick Start & Deployment
 ### ⚙️ Provisioning logic
 
