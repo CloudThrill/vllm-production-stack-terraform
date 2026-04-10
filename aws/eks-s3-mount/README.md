@@ -22,8 +22,8 @@
 - [🔍 S3 Mountpoint & GPU Walkthrough](#-s3-mountpoint--gpu--walkthrough)
   - [1. The Automated S3 Bootstrap (LLM seeding) `storage.tf`](#1-the-automated-s3-bootstrap-llm-seeding-storagetf)
   - [2. S3 Mountpoint CSI Driver `cluster-tools.tf`](#2-s3-mountpoint-csi-driver-cluster-toolstf)
-  - [3. IAM & S3 Storage provisioning `storage.tf`](#3-iam--s3-storage-provsioning-storagetf)
-  - [4. The multi-replicas vLLM "Squeeze" `gpu-tinyllama-light-ingress-s3.tpl`](#4-the-multi-recplicas-vllm-squeeze-gpu-tinyllama-light-ingress-s3tpl)
+  - [3. IAM & S3 Storage provisioning `storage.tf`](#3-iam--s3-storage-provisioning-storagetf)
+  - [4. The multi-replicas vLLM "Squeeze" `gpu-tinyllama-light-ingress-s3.tpl`](#4-the-multi-replicas-vllm-squeeze-gpu-tinyllama-light-ingress-s3tpl)
 - [🚀 Quick Start & Deployment](#-quick-start--deployment)
   - [🏗️ Terraform Provisioning Flow](#️-terraform-provisioning-flow)
   - [1. Clone the repository](#1-clone-the-repository)
@@ -72,20 +72,18 @@
 Loading massive weight files into EBS volumes per each replica limits horizontal scaling and inflates costs. We bypass this entirely:
 
 * ✅ **Streams, Not Syncs** (`cluster-tools.tf`)<br>
-  The AWS Mountpoint CSI Driver streams `model.safetensors` directly from S3 into GPU VRAM, keeping compute nodes 100% stateless.
-
-* ✅ **S3 "subPath" Containment** (`storage.tf`)<br>
-  Mounts a strict S3 prefix per model (e.g., `subPath: $${s3_my_model}`) to guarantee bucket isolation and prevent Out-Of-Memory crashes from "Poisoned Folders."
+  * Mountpoint CSI streams weights directly from S3 → GPU VRAM (no EBS overhead)
+  * Strict prefix isolation per model prevents bucket contamination
 
 * ✅ **Multi-Pod GPU Scaling** (`gpu-tinyllama-light-ingress-s3.tpl`)<br>
-  Bypasses the K8s hardware lock (by omitting `requestGPU: 1`) and injects `--gpu-memory-utilization=0.40` so multiple pod replicas can safely share a single physical GPU.
+  * Bypasses K8s hardware lock (omits `requestGPU: 1`)
+  * VRAM partitioning via `--gpu-memory-utilization=0.40` enables 2 replicas per GPU
 
-* 🏁🛑 **Race Condition Guards**
 
-| Guard Type | Purpose | Behavior |
-|------------|---------|----------|
-| **Phantom Dependency** | No premature deploy| Forces Helm to wait until the S3 model bootstrap is 100% complete |
-| **Bootstrap_Model_To_S3** | Guarantees Model Weight Availability | Checks the S3 prefix. If empty, automatically downloads the HuggingFace model and syncs it to S3, If prefix and weights exist do nothing.|
+* 🏁🛑 **Automated Bootstrapping**
+  * Auto-downloads from HuggingFace if S3 bucket empty
+  * Idempotency checks (`config.json` + size validation)
+  * Helm waits for bootstrap completion before deployment
 
 > **AWS Mountpoint** is an API translator. It converts standard pod filesystem reads directly into native S3 streaming API GET calls on the fly.
 ---
@@ -275,7 +273,7 @@ helm_releases = var.enable_s3_csi_driver ? {
 ...
 ```
 
-### 3. IAM & S3 Storage provsioning [`storage.tf`](./storage.tf)
+### 3. IAM & S3 Storage provisioning [`storage.tf`](./storage.tf)
 Create an S3 bucket for model weights, attach IAM roles to give pods access to it, then provision both vLLM PV & PVC linked to the bucket.
 
 <details>
@@ -504,7 +502,7 @@ Create an S3 bucket for model weights, attach IAM roles to give pods access to i
 </details>
 
 
-## 4. The multi-recplicas vLLM "Squeeze" [`gpu-tinyllama-light-ingress-s3.tpl`](./gpu-tinyllama-light-ingress-s3.tpl)
+## 4. The multi-replicas vLLM "Squeeze" [`gpu-tinyllama-light-ingress-s3.tpl`](./gpu-tinyllama-light-ingress-s3.tpl)
 To run 2 replicas (TinyLlama 1B/3B) on a single 24GB NVIDIA L4, we remove the K8s hardware lock to allow the VRAM to be partitioned safely.
 
 ```yaml
@@ -785,10 +783,10 @@ Below is the boot telemetry for a 2GB model while the CSI driver streams model w
 
 This stack is tuned to stack **two** model instances on a single 24GB GPU:
 
-  * **Total Usable VRAM:** $\sim 22.35 \text{ GiB}$
-  * **Partition per Pod:** $0.4$ ($\sim 8.9 \text{ GiB}$)
-  * **Model Size (fp16):** $\sim 2.05 \text{ GiB}$
-  * **KV Cache & Compile Headroom:**  $\sim 6.8 \text{ GiB}$
+* **Total Usable VRAM:** ~22.35 GiB (24 GB - OS overhead)
+* **Per-Pod Allocation:** 0.4 × 22.35 = ~8.9 GiB
+* **Model Footprint (fp16):** ~2.05 GiB
+* **KV Cache + Compile Overhead:** ~6.8 GiB
 ---
 Built with ❤️ by [@Cloudthrill](https://github.com/CloudThrill)
  
