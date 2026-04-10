@@ -505,7 +505,7 @@ Create an S3 bucket for model weights, attach IAM roles to give pods access to i
 
 
 ## 4. The multi-recplicas vLLM "Squeeze" [`gpu-tinyllama-light-ingress-s3.tpl`](./gpu-tinyllama-light-ingress-s3.tpl)
-To run 2 small replicas (like TinyLlama 1B/3B) on a single 24GB NVIDIA L4, we alter the standard Helm values. We remove the K8s hardware lock, force the pod onto the GPU node, and partition the VRAM.
+To run 2 replicas (TinyLlama 1B/3B) on a single 24GB NVIDIA L4, we remove the K8s hardware lock to allow the VRAM to be partitioned safely.
 
 ```yaml
 # gpu-tinyllama-light-ingress-s3.tpl snippet
@@ -525,7 +525,7 @@ To run 2 small replicas (like TinyLlama 1B/3B) on a single 24GB NVIDIA L4, we al
     replicaCount: 2
     requestCPU: 1
     requestMemory: "2Gi"
-  # requestGPU: 1          # REMOVED: To allow multiple pods on one GPU
+  # requestGPU: 1          # REMOVED: remove the K8s hardware lock to allow multiple pods on one GPU
     limitCPU: 2
     limitMemory: "8Gi"
     vllmConfig:
@@ -562,7 +562,18 @@ routerSpec:
       path: /health
       port: 8000    
 ```
- 
+ <details>
+<summary><b>🧠 Why K8s Can't Natively Share GPUs?</b></summary>
+
+* **The Integer Problem:** <br>The K8s Device API only understands whole numbers. You cannot request `0.5` GPUs or `10Gi` of VRAM. <br>K8s requests `1` device, and the NVIDIA plugin hands over the entire hardware ID.
+* **Kernel Blindness:** <br>Linux `cgroups` enforce system RAM limits, but not GPU VRAM. Once K8s injects `/dev/nvidia0` into a pod, that pod has unmitigated access to the full VRAM. 
+* **Enterprise Solutions:** <br>At scale, engineers fix this using
+  * **MIG** (hardware partitioning, unsupported on L4)
+  * **Time-Slicing** (software context-switching)
+  * **MPS** (merged CUDA streams).  
+  * **HAMi** software GPU virtualization (intercepts CUDA for hard fractional limits)
+  * **KAI Scheduler** (NVIDIA's soft-isolation AI scheduler). For a single node, letting vLLM self-manage its own VRAM is the cleanest bypass.
+</details>
 
 ---
 ## 🚀 Quick Start & Deployment
