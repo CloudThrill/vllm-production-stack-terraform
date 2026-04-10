@@ -147,15 +147,6 @@ The deployment provisions the required infrastructure based on your hardware sel
 | | Application | Deploy TinyLlama-1.1B Helm chart to `vllm` namespace | `enable_vllm = true` |
 | **3. Networking** | Load Balancer | Configure ALB and ingress for external access | `enable_vllm = true` |
 | **4. model storage** | PVC mounted from S3 | Crate S3 Bucket+ load from HF + install S3 CSI Driver + create PV/PVC | -> `/models/<model>` |
-
-
-
-
-
-### 2. EKS Storage Add-ons (`cluster-tools.tf`)
-Manages the critical cluster-level utilities required for a production API:
-
-
  
 ---
 ## 🏗️ Terraform Provisioning Flow
