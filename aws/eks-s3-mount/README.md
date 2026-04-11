@@ -792,5 +792,22 @@ This stack is tuned to stack **two** model instances on a single 24GB GPU:
 * **Model Footprint (fp16):** ~2.05 GiB
 * **KV Cache + Compile Overhead:** ~6.8 GiB
 ---
-Built with ❤️ by [@Cloudthrill](https://github.com/CloudThrill)
+## 🔧 Cleanup Notes
+
+### Optional Manual Cleanup
+
+In rare cases, you may need to manually clean up some AWS resources while running terraform destroy.
+
+**🐈 Calico Cleanup Jobs**
+
+If encountering job conflicts during Calico removal (i.e: * jobs.batch "tigera-operator-uninstall" already exists) run the below commands
+
+```bash
+# use the following commands to delete the jobs manually first:
+kubectl -n tigera-operator delete job tigera-operator-uninstall --ignore-not-found=true
+```
+See most common issues in this [troubleshooting section](https://github.com/CloudThrill/vllm-production-stack-terraform/tree/main/aws/eks-base#-cleanup-notes)
+
+---
+<br>Built with ❤️ by [@Cloudthrill](https://github.com/CloudThrill)
  
