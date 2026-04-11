@@ -68,8 +68,10 @@
 ```
 
 ---
-## ⚙️ Provisioning Highlights
+## ⚙️ Key Features
 Loading massive weight files into EBS volumes per each replica limits horizontal scaling and inflates costs. We bypass this entirely:
+<img width="1823" height="1138" alt="image" src="https://github.com/user-attachments/assets/0edc66f1-3f9b-4d26-82a2-70cefeb2ac71" />
+
 
 * ✅ **Streams, Not Syncs** (`cluster-tools.tf`)<br>
   * Mountpoint CSI streams weights directly from S3 → GPU VRAM (no EBS overhead)
