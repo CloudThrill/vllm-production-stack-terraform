@@ -2,7 +2,7 @@
 
 <img width="1536" height="1024" alt="vllm_prod-stack-eks-s3" src="https://github.com/user-attachments/assets/ab2fa28a-2ac3-4c01-ac19-a2225ceda960" />
 
-<br>✍🏼This Terraform stack delivers a **production-ready vLLM serving environment** on Amazon EKS. By utilizing the **AWS Mountpoint S3 CSI Driver**, it decouples model storage from compute (no EBS needed) and leverages customized scheduling to allow multiple vLLM replicas to share a single GPU and model storage. This is an S3-optimize variant of our foundational [Vllm-EKS stack](https://cloudthrill.ca/vllm-production-stack-on-eks-terraform).
+<br>✍🏼This Terraform stack delivers a **production-ready vLLM serving environment** on Amazon EKS. By utilizing the **AWS Mountpoint S3 CSI Driver**, it decouples model storage from compute (no EBS needed) and leverages customized scheduling to allow multiple vLLM replicas to share a single GPU and model storage. This is an S3-optimized variant of our foundational [Vllm-EKS stack](https://cloudthrill.ca/vllm-production-stack-on-eks-terraform).
 > 💡**Note**: For standard EBS-backed deployment, please use the [`eks-base`](../eks-base) stack instead.
 
 | Project Item | Description |
@@ -23,7 +23,7 @@
   - [1. The Automated S3 Bootstrap (LLM seeding) `storage.tf`](#1-the-automated-s3-bootstrap-llm-seeding-storagetf)
   - [2. S3 Mountpoint CSI Driver `cluster-tools.tf`](#2-s3-mountpoint-csi-driver-cluster-toolstf)
   - [3. IAM & S3 Storage provisioning `storage.tf`](#3-iam--s3-storage-provisioning-storagetf)
-  - [4. The multi-replicas vLLM "Squeeze" `gpu-tinyllama-light-ingress-s3.tpl`](#4-the-multi-replicas-vllm-squeeze-gpu-tinyllama-light-ingress-s3tpl)
+  - [4. The multi-replica vLLM "Squeeze" `gpu-tinyllama-light-ingress-s3.tpl`](#4-the-multi-replica-vllm-squeeze-gpu-tinyllama-light-ingress-s3tpl)
 - [🚀 Quick Start & Deployment](#-quick-start--deployment)
   - [🏗️ Terraform Provisioning Flow](#️-terraform-provisioning-flow)
   - [1. Clone the repository](#1-clone-the-repository)
@@ -81,9 +81,12 @@ Loading massive weight files into EBS volumes per each replica limits horizontal
 
 
 * 🏁🛑 **Automated Bootstrapping**
-  * Auto-downloads from HuggingFace if S3 bucket empty
-  * Idempotency checks (`config.json` + size validation)
-  * Helm waits for bootstrap completion before deployment
+  
+| Feature | Implementation | Benefit |
+|---------|---------------|---------|
+| **HuggingFace Download** | Auto-downloads model if S3 prefix is empty | Zero manual setup |
+| **Idempotency Checks** | Validates `config.json` existence + minimum file size | Prevents duplicate uploads |
+| **Dependency Sequencing** | Helm waits for bootstrap completion before vLLM deployment | Eliminates race conditions |
 
 > **AWS Mountpoint** is an API translator. It converts standard pod filesystem reads directly into native S3 streaming API GET calls on the fly.
 ---
@@ -236,7 +239,7 @@ resource "terraform_data" "bootstrap_model_to_s3" {
 
 
 ### 2. S3 Mountpoint CSI Driver [`cluster-tools.tf`](./cluster-tools.tf)
-The S3 CSI driver will allow to mount S3 buckets in Persistent Volums and stream weights into GPU through PVCs.
+The S3 CSI driver will allow to mount S3 buckets in Persistent Volumes and stream weights into GPU through PVCs.
 
 ```hcl
 # cluster-tools.tf snippet
@@ -502,7 +505,7 @@ Create an S3 bucket for model weights, attach IAM roles to give pods access to i
 </details>
 
 
-## 4. The multi-replicas vLLM "Squeeze" [`gpu-tinyllama-light-ingress-s3.tpl`](./gpu-tinyllama-light-ingress-s3.tpl)
+## 4. The multi-replica vLLM "Squeeze" [`gpu-tinyllama-light-ingress-s3.tpl`](./gpu-tinyllama-light-ingress-s3.tpl)
 To run 2 replicas (TinyLlama 1B/3B) on a single 24GB NVIDIA L4, we remove the K8s hardware lock to allow the VRAM to be partitioned safely.
 
 ```yaml
@@ -512,7 +515,7 @@ To run 2 replicas (TinyLlama 1B/3B) on a single 24GB NVIDIA L4, we remove the K8
     repository: "vllm/vllm-openai"
     tag: "v0.8.5.post1"
     modelURL: "/models/${s3_tiny_model}"
-    mountPvcStorage: false   # We will use extraVolumes to mount the S3 model directy instead
+    mountPvcStorage: false   # We will use extraVolumes to mount the S3 model directly instead
     # Forces VLLM pods onto the GPU node when GPUrequest is removed, and allows multiple pods to share the GPU 
     nodeSelectorTerms:
         - matchExpressions:
@@ -563,8 +566,8 @@ routerSpec:
  <details>
 <summary><b>🧠 Why K8s Can't Natively Share GPUs?</b></summary>
 
-* **The Integer Problem:** <br>The K8s Device API only understands whole numbers. You cannot request `0.5` GPUs or `10Gi` of VRAM. <br>K8s requests `1` device, and the NVIDIA plugin hands over the entire hardware ID.
-* **Kernel Blindness:** <br>Linux `cgroups` enforce system RAM limits, but not GPU VRAM. Once K8s injects `/dev/nvidia0` into a pod, that pod has unmitigated access to the full VRAM. 
+* **The Integer Problem:** <br> K8s only accepts whole numbers. You can't request `0.5` GPUs; it grants `1` full device ID by default.
+* **Kernel Blindness:** <br>Linux `cgroups` enforce system RAM limits, not GPU VRAM. Once K8s injects `/dev/nvidia0` into a pod, that pod has access to the full VRAM. 
 * **Enterprise Solutions:** <br>At scale, engineers fix this using
   * **MIG** (hardware partitioning, unsupported on L4)
   * **Time-Slicing** (software context-switching)
@@ -588,7 +591,7 @@ This deployment utilizes a "phantom dependency" chain to ensure race conditions 
 | **Add-ons (Helm)** | 03:35:53 | 03:38:39 | ~2m 46s     |
 | **S3 CSI Driver** | 03:38:39 | 03:38:47 | ~8s         |
 | **Calico + GPU Plugin** | 03:38:47 | 03:39:15 | ~28s        |
-| **vLLM Stack(1Router+ 2Engines+ S3 model load+ Ovservability)** | 03:39:15 | 03:47:29 | **~8m 14s** |
+| **vLLM Stack(1Router+ 2Engines+ S3 model load+ Obvservability)** | 03:39:15 | 03:47:29 | **~8m 14s** |
 | **Total Deployment Time** | 03:23:02 | 03:47:29 | **~24 minutes** |
 > From a cold start, the entire infrastructure stack provisions in **~24 minutes**:
  ### 1. Clone the repository
@@ -625,7 +628,7 @@ source env-vars
   export TF_VAR_enable_s3_csi_driver=true
   export TF_VAR_enable_s3_model_storage=true
   export TF_VAR_create_s3_bucket=true
-  export TF_VAR_s3_bucket="vllm-bucket-ramdom"    # CHANGE ME (must be unique globally)
+  export TF_VAR_s3_bucket="vllm-bucket-random"    # CHANGE ME (must be unique globally)
   export TF_VAR_s3_models_prefix="models"
   export TF_VAR_s3_csi_driver_version="1.10.0"
   export TF_VAR_huggingface_model_id="TinyLlama/TinyLlama-1.1B-Chat-v1.0"
