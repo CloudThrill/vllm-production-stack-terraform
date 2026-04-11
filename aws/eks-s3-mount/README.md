@@ -727,9 +727,13 @@ curl -k "http://<YOUR_ALB_URL>/v1/models"
 
 **2. Round-Robin Load Balancing Test:**
 ```bash
-# Forward the router port locally (run this in the background or a separate terminal)
+-- case 1 : Forward the router port locally (run this in the background or a separate terminal)
 kubectl -n vllm port-forward svc/vllm-gpu-router-service 30080:80 &
 export vllm_api_url=http://localhost:30080/v1
+
+-- case 2 : AWS ALB Ingress enabled
+$ kubectl get ingress -n vllm -o json| jq -r .items[0].status.loadBalancer.ingress[].hostname
+export vllm_api_url=http://k8s-vllm-vllmingr-**********.us-east-2.elb.amazonaws.com/v1
 
 # Send a barrage of prompts to test the round-robin distribution
 prompts=("The capital of France is" "Why is the sky blue?" "Write a poem about GPUs" "Explain Kubernetes" "Toronto is famous for" "Artificial Intelligence is")
@@ -760,11 +764,11 @@ stern tinyllama-gpu -n vllm --tail 100 --no-follow --include 'POST|Engine' --exc
   ```nginx
 + vllm-gpu-tinyllama-gpu-deployment-vllm-6949f54975-qtwps › vllm
 + vllm-gpu-tinyllama-gpu-deployment-vllm-6949f54975-52hsz › vllm
-vllm-gpu-tinyllama-gpu-deployment-vllm-6949f54975-qtwps vllm INFO 04-08 01:24:55 [loggers.py:111] Engine 000: Avg prompt throughput: 0.4 tokens/s, Avg generation throughput: 2.0 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 0.0%
-vllm-gpu-tinyllama-gpu-deployment-vllm-6949f54975-qtwps vllm INFO 04-08 01:26:05 [loggers.py:111] Engine 000: Avg prompt throughput: 1.9 tokens/s, Avg generation throughput: 3.0 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 0.0%
-vllm-gpu-tinyllama-gpu-deployment-vllm-6949f54975-52hsz vllm INFO 04-08 01:26:08 [loggers.py:111] Engine 000: Avg prompt throughput: 1.8 tokens/s, Avg generation throughput: 3.0 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.1%, Prefix cache hit rate: 0.0%
-vllm-gpu-tinyllama-gpu-deployment-vllm-6949f54975-52hsz vllm INFO 04-08 01:41:28 [loggers.py:111] Engine 000: Avg prompt throughput: 1.8 tokens/s, Avg generation throughput: 2.8 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.1%, Prefix cache hit rate: 0.0%
-vllm-gpu-tinyllama-gpu-deployment-vllm-6949f54975-52hsz vllm INFO 04-08 01:41:48 [loggers.py:111] Engine 000: Avg prompt throughput: 1.8 tokens/s, Avg generation throughput: 2.8 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.1%, Prefix cache hit rate: 0.0%
+vllm-gpu-tinyllama-gpu-deployment-vllm-6949f54975-qtwps vllm INFO 04-08 01:24:55 [loggers.py:111] Engine 000: Avg prompt throughput: 77.4 tokens/s, Avg generation throughput: 558.8 tokens/s, Running: 7 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.3%, Prefix cache hit rate: 0.0%
+vllm-gpu-tinyllama-gpu-deployment-vllm-6949f54975-qtwps vllm INFO 04-08 01:26:05 [loggers.py:111] Engine 000: Avg prompt throughput: 12.6 tokens/s, Avg generation throughput: 191.2 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 0.0%
+vllm-gpu-tinyllama-gpu-deployment-vllm-6949f54975-52hsz vllm INFO 04-08 01:26:08 [loggers.py:111] Engine 000: Avg prompt throughput: 72.0 tokens/s, Avg generation throughput: 583.1 tokens/s, Running: 11 reqs, Waiting: 0 reqs, GPU KV cache usage: 2.9%, Prefix cache hit rate: 0.0%
+vllm-gpu-tinyllama-gpu-deployment-vllm-6949f54975-52hsz vllm INFO 04-08 01:41:28 [loggers.py:111] Engine 000: Avg prompt throughput: 82.8 tokens/s, Avg generation throughput: 567.0 tokens/s, Running: 8 reqs, Waiting: 0 reqs, GPU KV cache usage: 1.5%, Prefix cache hit rate: 0.0%
+vllm-gpu-tinyllama-gpu-deployment-vllm-6949f54975-52hsz vllm INFO 04-08 01:41:48 [loggers.py:111] Engine 000: Avg prompt throughput: 18.0 tokens/s, Avg generation throughput: 11.6 tokens/s, Running: 10 reqs, Waiting: 0 reqs, GPU KV cache usage: 1.9%, Prefix cache hit rate: 0.0%
 ```
 </details>
 
