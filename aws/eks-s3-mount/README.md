@@ -727,6 +727,7 @@ curl -k "http://<YOUR_ALB_URL>/v1/models"
 
 **2. Round-Robin Load Balancing Test:**
 ```bash
+# 1. Extract the router URL
 -- case 1 : Forward the router port locally (run this in the background or a separate terminal)
 kubectl -n vllm port-forward svc/vllm-gpu-router-service 30080:80 &
 export vllm_api_url=http://localhost:30080/v1
@@ -735,20 +736,16 @@ export vllm_api_url=http://localhost:30080/v1
 $ kubectl get ingress -n vllm -o json| jq -r .items[0].status.loadBalancer.ingress[].hostname
 export vllm_api_url=http://k8s-vllm-vllmingr-**********.us-east-2.elb.amazonaws.com/v1
 
-# Send a barrage of prompts to test the round-robin distribution
-prompts=("The capital of France is" "Why is the sky blue?" "Write a poem about GPUs" "Explain Kubernetes" "Toronto is famous for" "Artificial Intelligence is")
-
-for i in {0..5}; do
-  echo -n "Request $((i+1)) [Prompt: $${prompts[$i]}] -> "
-  curl -s $vllm_api_url/completions \
-    -H "Content-Type: application/json" \
-    -d "{
-      \"model\": \"/models/tiny-llama\",
-      \"prompt\": \"$${prompts[$i]}\",
-      \"max_tokens\": 10
-    }" | jq -r '.choices[].text' | tr -d '\n'
-  echo ""
-done
+# 2. Send a barrage of concurent prompts to test the round-robin distribution
+seq 1 100 | xargs -n 1 -P 25 -I {} curl -s -X POST $vllm_api_url/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "/models/tiny-llama",
+    "prompt": "Explain the architecture of Kubernetes and how it schedules pods in detail:",
+    "max_tokens": 150
+  }' \
+  -o /dev/null \
+  -w "✅ Request: {} | Status: %{http_code} | Time: %{time_total}s\n"
 ```
 
 **3. Observe the inference in Action**
