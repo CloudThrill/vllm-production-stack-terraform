@@ -1,0 +1,79 @@
+# terraform.tfvars.template
+# This template file shows all available Terraform variables for the vLLM EKS deployment.
+# Copy this file to terraform.tfvars and fill in your specific values.
+# Remember to fill in sensitive values (like AWS keys, HF token)
+# and adjust defaults as needed for your environment.
+
+################################################################################
+# ☁️ AWS Credentials and Region
+################################################################################
+aws_access_key = ""         # Fill your AWS Access Key ID
+aws_secret_key = ""         # Fill your AWS Secret Access Key  
+aws_profile    = ""         # Fill your AWS Profile name (e.g., default, cloudthrill)
+region         = "us-east-2" # AWS Region for your deployment
+
+################################################################################
+# ☸️ EKS Cluster & Network Configuration
+################################################################################
+cluster_name    = "vllm-eks-prod" 
+cluster_version = "1.32"          
+vpc_cidr        = "10.20.0.0/16"
+enable_lb_ctl   = false           # Set to true to enable AWS Load Balancer Controller
+
+################################################################################
+# 💽 S3 Model Storage (AWS Mountpoint CSI)
+################################################################################
+enable_s3_csi_driver    = true
+enable_s3_model_storage = true
+create_s3_bucket        = true
+s3_bucket               = "vllm-bucket-random" # CHANGE ME (must be unique globally)
+s3_models_prefix        = "models"
+s3_csi_driver_version   = "1.10.0"
+
+################################################################################
+# 🧠 LLM Inference & vLLM Configuration
+################################################################################
+enable_vllm          = true  
+inference_hardware   = "gpu"     # Must be "gpu" for the S3-backed variant
+nvidia_setup         = "plugin"  # "plugin", "operator_no_driver", or "operator_custom"
+hf_token             = ""        # Hugging Face token for automated S3 bootstrap
+huggingface_model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+# Paths to Helm chart values templates for vLLM.
+gpu_vllm_helm_config = "./modules/llm-stack/helm/gpu/gpu-tinyllama-light-ingress-s3.tpl"
+# cpu_vllm_helm_config = "./modules/llm-stack/helm/cpu/cpu-tinyllama-light-ingress.tpl" # not supported by S3 backed variant
+
+################################################################################
+# ⚙️ Node-Group Sizing & Hardware
+################################################################################
+# CPU pool (always present for system pods)
+cpu_node_min_size     = 1
+cpu_node_max_size     = 3
+cpu_node_desired_size = 2
+
+# GPU pool (Targeting NVIDIA L4)
+gpu_node_instance_types = ["g6.2xlarge"]
+gpu_node_min_size       = 1
+gpu_node_max_size       = 1
+gpu_node_desired_size   = 1
+gpu_capacity_type       = "ON_DEMAND" # "SPOT" or "ON_DEMAND"
+
+################################################################################
+# 💾 Storage CSI drivers (EFS - Uncomment to enable)
+################################################################################
+# enable_efs_csi_driver = true  
+# enable_efs_storage    = false 
+# enable_iam_roles      = false 
+
+################################################################################
+# 📈 Observability (Uncomment to enable)
+################################################################################
+# enable_cert_manager = true 
+# enable_prometheus   = true 
+# enable_grafana      = true 
+
+################################################################################
+# 🌐 Additional VPC Subnet Lists (Optional)
+################################################################################
+# For complex list variables, define them as HCL lists:
+# public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+# private_subnet_cidrs = ["10.0.4.0/24", "10.0.5.0/24", "10.0.6.0/24"]
