@@ -23,3 +23,9 @@ Multi-cloud Terraform deployment framework for the vLLM Production Stack — wit
   
    - See 👉🏻[blog](https://cloudthrill.ca/vllm-production-stack-on-neb-terraform)
 <img width="1536" height="1024" alt="vllm_prod-stack-gke" src="https://github.com/brokedba/brokedba/blob/gh-pages/images/vllm_prod-stack-nebius.png" />
+
+---
+**5. Coreweave CKS**
+ - See 👉🏻[blog](https://cloudthrill.ca/vllm-production-stack-on-coreweave-terraform)
+ <img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/a84e02fb-609b-405b-ad04-494d52087b1a" />
+
