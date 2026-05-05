@@ -164,7 +164,7 @@ Learn more about cwic commands on my [coreweave-blog-post](https://cloudthrill.c
 
 **Model Options:**
 There are 3 different vllm deployment charts:
-- [gpu-gpt-oss-20b](./config/gpu-gpt-oss-20-cw.tpl) | [oss flagship LLM collection](./config/gpu-gpt-qwn-gem-glm-cw.tpl) | [tiny-llama](./config/gpu-llama-light-ingress-cw.tpl) . (for DeepseekV3 read 🐳[here](https://github.com/CloudThrill/vllm-production-stack-terraform/tree/main/coreweave/cks-deepseek3))
+- [gpu-gpt-oss-20b](./config/llm-stack/helm/gpu/gpu-gpt-oss-20-cw.tpl) | [oss flagship LLM collection](./config/llm-stack/helm/gpu/gpu-gpt-qwn-gem-glm-cw.tpl) | [tiny-llama](./config/llm-stack/helm/gpu/gpu-llama-light-ingress-cw.tpl) . (for DeepseekV3 read 🐳[here](https://github.com/CloudThrill/vllm-production-stack-terraform/tree/main/coreweave/cks-deepseek3))
 
 ---
 
