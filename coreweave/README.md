@@ -170,6 +170,7 @@ There are 3 different vllm deployment charts:
 ---
 
 ## ⚙️ Provisioning Highlights 
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/11fa3e9d-e3d4-4966-b455-fb7d9aa8c71d" />
 
 * ✅ **One-Click Deployment**: 100% automated vLLM stack with zero manual intervention
 
