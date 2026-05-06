@@ -134,6 +134,8 @@ export AWS_PROFILE=myprofile        # ← If null Terraform exec auth will use t
 ```
 ---
 ## 🏗️ Core Infrastructure Components
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/06cea626-114c-401f-882f-d89ff38a078b" />
+
 The deployment provisions the required infrastructure based on your hardware selection.
 
 | Phase | Component | Action | Condition |
