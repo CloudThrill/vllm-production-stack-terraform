@@ -218,7 +218,7 @@ Core CKS add-ons are pre-optimized for AI workloads. We added below K8s addons t
 | **Security** | **cert-manager** | Let's Encrypt HTTP-01 automation |
 | **GPU** | **Pre-baked NVIDIA drivers** | No separate GPU operator required |
 
-### 4. 🧠 vLLM Production Stack (CPU/GPU)
+### 4. 🧠 vLLM Production Stack (GPU)
 | Feature | Implementation |
 | :--- | :--- |
 | **Model Serving** | (Default) Single GPT-OSS-20B model replica. |
