@@ -36,13 +36,12 @@
 1. [Project Structure](#-project-structure)
 2. [Prerequisites](#-prerequisites)
 3. [What Terraform Deploys](#%EF%B8%8F-what-terraform-deploys)
-4. [Hardware Options](#%EF%B8%8Fcoreweave-gpu-instance)
-5. [Configuration Knobs](#%EF%B8%8F-configuration-knobs)
-6. [Quick Start](#-quick-start)
-7. [Quick Test](#-quick-test)
-8. [Observability](#-observability)
-9. [Troubleshooting](#-troubleshooting)
-10. [Additional Resources](#-additional-resources)
+4. [Configuration Knobs](#%EF%B8%8F-configuration-knobs)
+5. [Quick Start](#-quick-start)
+6. [Quick Test](#-quick-test)
+7. [Observability](#-observability)
+8. [Troubleshooting](#-troubleshooting)
+9. [Additional Resources](#-additional-resources)
 
 ---
 
