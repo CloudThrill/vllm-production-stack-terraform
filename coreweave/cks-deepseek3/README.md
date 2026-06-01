@@ -156,7 +156,7 @@ This build required its dedicated Git repo because the following components were
 > **KubeRay** is the official operator for Ray and vLLM uses Ray as its default distributed engine.
 
 ### DeepSeekv3.2 Deployment Chart:
-This stack has a single vllm deployment chart [gpu-deepseek-v32.tpl](./config/gpu-deepseek-v32.tpl) since it takes two nodes to serve Deepseekv32 🐳 .
+This stack has a single vllm deployment chart [gpu-deepseek-v32.tpl](./config/llm-stack/helm/gpu/gpu-deepseek-v32.tpl) since it takes two nodes to serve Deepseekv32 🐳 .
 ### 1. Kuberay orchestration (installation using helm)
 
 The Terraform configuration manages the **KubeRay Operator** and the **RayCluster** resource as a single unit.
@@ -404,7 +404,7 @@ Core CKS add-ons are pre-optimized for AI workloads. We added below K8s addons t
 | **Load Balancing** | Round-robin request router service. |
 | **Hugging Face Token** | Securely stored as a Kubernetes Secret. |
 | **LLM Storage** |  Persistent model caching under `/data/models/` using VAST Data. |
-| **Deepseek Helm Chart** | [`deepseek.tpl`](./config/llm-stack/helm/gpu/gpu-deepseek-v32.tpl). |
+| **Deepseek Helm Chart** | [`gpu-deepseek-v32.tpl`](./config/llm-stack/helm/gpu/gpu-deepseek-v32.tpl). |
 | **Observability** | **2x vLLM Dashboards**: Pre-configured Grafana views for KV Cache and Inference Performance. |
 
 ## 🖥️Coreweave GPU Instance
@@ -546,7 +546,7 @@ No modules.
 | <a name="input_gpu_nodepool_name"></a> [gpu\_nodepool\_name](#input\_gpu\_nodepool\_name) | NodePool name | `string` | `"gpu-pool"` | no |
 | <a name="input_gpu_nodepool_taints"></a> [gpu\_nodepool\_taints](#input\_gpu\_nodepool\_taints) | Taints applied to GPU nodes (via nodeTaints in NodePool spec) | <pre>list(object({<br/>    key    = string<br/>    value  = string<br/>    effect = string  # NoSchedule, PreferNoSchedule, or NoExecute<br/>  }))</pre> | <pre>[<br/>  {<br/>    "effect": "NoSchedule",<br/>    "key": "nvidia.com/gpu",<br/>    "value": "true"<br/>  }<br/>]</pre> | no |
 | <a name="input_gpu_scale_down_strategy"></a> [gpu\_scale\_down\_strategy](#input\_gpu\_scale\_down\_strategy) | Scale down strategy: IdleOnly or PreferIdle | `string` | `"PreferIdle"` | no |
-| <a name="input_gpu_vllm_helm_config"></a> [gpu\_vllm\_helm\_config](#input\_gpu\_vllm\_helm\_config) | Path to GPU VLLM Helm values template | `string` | `"config/llm-stack/helm/gpu/gpu-gpt-oss-20-cw.tpl"` | no |
+| <a name="input_gpu_vllm_helm_config"></a> [gpu\_vllm\_helm\_config](#input\_gpu\_vllm\_helm\_config) | Path to GPU VLLM Helm values template | `string` | `"config/llm-stack/helm/gpu/gpu-deepseek-v32.tpl"` | no |
 | <a name="input_grafana_admin_password"></a> [grafana\_admin\_password](#input\_grafana\_admin\_password) | n/a | `string` | `"admin1234"` | no |
 | <a name="input_grafana_host_prefix"></a> [grafana\_host\_prefix](#input\_grafana\_host\_prefix) | n/a | `string` | `"grafana"` | no |
 | <a name="input_hf_token"></a> [hf\_token](#input\_hf\_token) | Hugging Face token for model download | `string` | `""` | no |
@@ -686,7 +686,7 @@ Example with `vllm_host_prefix="vllm"` and `cluster_name=vllm-cw-prod`
       GPU POOL [gd-8xh100ib-i128] : gpu-pool
       CPU SCALING       : [target=1, min=1, max=2, autoscaling=true]
       GPU SCALING       : [target=1, min=1, max=2, autoscaling=true]
-      VLLM CONFIG       : ./config/llm-stack/helm/gpu/gpu-gpt-oss-20-cw.tpl
+      VLLM CONFIG       : ./config/llm-stack/helm/gpu/gpu-deepseek-v32.tpl
 
       🌐 ACCESS ENDPOINTS
       -----------------------------------------------------------
