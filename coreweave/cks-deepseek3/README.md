@@ -79,6 +79,19 @@
 ```
 
 ---
+## 🏗️ What Terraform Deploys
+
+End-to-end deployment for the DeepSeek-V3.2 reasoning API (685B, FP8) runs in roughly **[CONFIRM] minutes** — most of it model load, not infrastructure.
+
+| Phase | Component | Duration | Observation |
+| :--- | :--- | :--- | :--- |
+| **Phase 1** | **VPC & CKS API** | ~4 min | Control plane initialization. |
+| **Phase 2** | **CPU NodePool** | ~19 min | 1× Intel/AMD bare-metal node. |
+| **Phase 3** | **GPU NodePool (2×)** | ~[CONFIRM] min | 2× H100 bare-metal nodes, once the CPU pool is stable. |
+| **Phase 4** | **DeepSeek-V3.2 model** | ~59 min | 643GB FP8 weight pull + dual-node VRAM load (PP=2) + DeepGEMM/FlashMLA warmup. See [Deployment Workflow](#-deployment-workflow). |
+| **Total** | **Full Stack** | **~[CONFIRM] min** | From zero to a 16×H100-backed reasoning API. |
+
+**Model Options:** unlike the single-node [cks-vllm stack](https://github.com/CloudThrill/vllm-production-stack-terraform/tree/main/coreweave/cks-vllm) (GPT-OSS-20B, the OSS-flagship collection, TinyLlama), this multinode build ships a single chart — [`gpu-deepseek-v32.tpl`](./config/llm-stack/helm/gpu/gpu-deepseek-v32.tpl) — since DeepSeek-V3.2 spans two nodes by design.
 ## ⚙️ Provisioning Highlights
 
 * ✅ **One-Click Deployment**: 100% automated vLLM stack with zero manual intervention
