@@ -1,6 +1,7 @@
 # 🧑🏼‍🚀 vLLM Production Stack on Amazon EKS - S3 Mountpoint 
 
-<img width="1536" height="1024" alt="vllm_prod-stack-eks-s3" src="https://github.com/user-attachments/assets/ab2fa28a-2ac3-4c01-ac19-a2225ceda960" />
+<img width="2818" height="1647" alt="image" src="https://github.com/user-attachments/assets/c93f5868-bbf9-4df8-b75e-6bed9fee07ac" />
+
 
 <br>✍🏼This Terraform stack delivers a **production-ready vLLM serving environment** on Amazon EKS. By utilizing the **AWS Mountpoint S3 CSI Driver**, it decouples model storage from compute (no EBS needed) and leverages customized scheduling to allow multiple vLLM replicas to share a single GPU and model storage. This is an S3-optimized variant of our foundational [Vllm-EKS stack](https://cloudthrill.ca/vllm-production-stack-on-eks-terraform).
 > 💡**Note**: For standard EBS-backed deployment, please use the [`eks-base`](../eks-base) stack instead.
