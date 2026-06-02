@@ -71,6 +71,8 @@
 ---
 ## ⚙️ Key Features
 Loading massive weight files into EBS volumes per each replica limits horizontal scaling and inflates costs. We bypass this entirely:
+
+👉🏻See cost calculator in our [blog post](https://cloudthrill.ca/vllm-production-stack-on-eks-s3-mount) 
 <img width="1823" height="1138" alt="image" src="https://github.com/user-attachments/assets/0edc66f1-3f9b-4d26-82a2-70cefeb2ac71" />
 
 
